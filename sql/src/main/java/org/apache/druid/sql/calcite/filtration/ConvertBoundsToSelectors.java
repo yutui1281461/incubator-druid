@@ -24,20 +24,20 @@ import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.query.filter.SelectorDimFilter;
 import org.apache.druid.query.ordering.StringComparator;
 import org.apache.druid.sql.calcite.expression.SimpleExtraction;
-import org.apache.druid.sql.calcite.rel.DruidQuerySignature;
+import org.apache.druid.sql.calcite.table.RowSignature;
 
 public class ConvertBoundsToSelectors extends BottomUpTransform
 {
-  private final DruidQuerySignature querySignature;
+  private final RowSignature sourceRowSignature;
 
-  private ConvertBoundsToSelectors(final DruidQuerySignature querySignature)
+  private ConvertBoundsToSelectors(final RowSignature sourceRowSignature)
   {
-    this.querySignature = querySignature;
+    this.sourceRowSignature = sourceRowSignature;
   }
 
-  public static ConvertBoundsToSelectors create(final DruidQuerySignature querySignature)
+  public static ConvertBoundsToSelectors create(final RowSignature sourceRowSignature)
   {
-    return new ConvertBoundsToSelectors(querySignature);
+    return new ConvertBoundsToSelectors(sourceRowSignature);
   }
 
   @Override
@@ -45,7 +45,7 @@ public class ConvertBoundsToSelectors extends BottomUpTransform
   {
     if (filter instanceof BoundDimFilter) {
       final BoundDimFilter bound = (BoundDimFilter) filter;
-      final StringComparator comparator = querySignature.getRowSignature().naturalStringComparator(
+      final StringComparator naturalStringComparator = sourceRowSignature.naturalStringComparator(
           SimpleExtraction.of(bound.getDimension(), bound.getExtractionFn())
       );
 
@@ -54,7 +54,7 @@ public class ConvertBoundsToSelectors extends BottomUpTransform
           && bound.getUpper().equals(bound.getLower())
           && !bound.isUpperStrict()
           && !bound.isLowerStrict()
-          && (querySignature.isVirtualColumnDefined(bound.getDimension()) || bound.getOrdering().equals(comparator))) {
+          && bound.getOrdering().equals(naturalStringComparator)) {
         return new SelectorDimFilter(
             bound.getDimension(),
             bound.getUpper(),

@@ -33,13 +33,12 @@ import org.apache.druid.query.filter.BloomDimFilter;
 import org.apache.druid.query.filter.BloomKFilter;
 import org.apache.druid.query.filter.BloomKFilterHolder;
 import org.apache.druid.query.filter.DimFilter;
-import org.apache.druid.segment.VirtualColumn;
 import org.apache.druid.sql.calcite.expression.DirectOperatorConversion;
 import org.apache.druid.sql.calcite.expression.DruidExpression;
 import org.apache.druid.sql.calcite.expression.Expressions;
 import org.apache.druid.sql.calcite.expression.OperatorConversions;
 import org.apache.druid.sql.calcite.planner.PlannerContext;
-import org.apache.druid.sql.calcite.rel.DruidQuerySignature;
+import org.apache.druid.sql.calcite.table.RowSignature;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -68,17 +67,17 @@ public class BloomFilterOperatorConversion extends DirectOperatorConversion
   @Override
   public DimFilter toDruidFilter(
       final PlannerContext plannerContext,
-      final DruidQuerySignature querySignature,
+      final RowSignature rowSignature,
       final RexNode rexNode
   )
   {
     final List<RexNode> operands = ((RexCall) rexNode).getOperands();
     final DruidExpression druidExpression = Expressions.toDruidExpression(
         plannerContext,
-        querySignature.getRowSignature(),
+        rowSignature,
         operands.get(0)
     );
-    if (druidExpression == null) {
+    if (druidExpression == null || !druidExpression.isSimpleExtraction()) {
       return null;
     }
 
@@ -101,19 +100,8 @@ public class BloomFilterOperatorConversion extends DirectOperatorConversion
           druidExpression.getSimpleExtraction().getExtractionFn()
       );
     } else {
-      VirtualColumn virtualColumn = querySignature.getOrCreateVirtualColumnForExpression(
-          plannerContext,
-          druidExpression,
-          operands.get(0).getType().getSqlTypeName()
-      );
-      if (virtualColumn == null) {
-        return null;
-      }
-      return new BloomDimFilter(
-          virtualColumn.getOutputName(),
-          holder,
-          null
-      );
+      // expression virtual columns not currently supported
+      return null;
     }
   }
 }

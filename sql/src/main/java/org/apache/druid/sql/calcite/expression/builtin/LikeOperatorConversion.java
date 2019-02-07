@@ -26,12 +26,11 @@ import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.query.filter.LikeDimFilter;
-import org.apache.druid.segment.VirtualColumn;
 import org.apache.druid.sql.calcite.expression.DirectOperatorConversion;
 import org.apache.druid.sql.calcite.expression.DruidExpression;
 import org.apache.druid.sql.calcite.expression.Expressions;
 import org.apache.druid.sql.calcite.planner.PlannerContext;
-import org.apache.druid.sql.calcite.rel.DruidQuerySignature;
+import org.apache.druid.sql.calcite.table.RowSignature;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -55,42 +54,24 @@ public class LikeOperatorConversion extends DirectOperatorConversion
   @Override
   public DimFilter toDruidFilter(
       PlannerContext plannerContext,
-      DruidQuerySignature querySignature,
+      RowSignature rowSignature,
       RexNode rexNode
   )
   {
     final List<RexNode> operands = ((RexCall) rexNode).getOperands();
     final DruidExpression druidExpression = Expressions.toDruidExpression(
         plannerContext,
-        querySignature.getRowSignature(),
+        rowSignature,
         operands.get(0)
     );
-    if (druidExpression == null) {
+    if (druidExpression == null || !druidExpression.isSimpleExtraction()) {
       return null;
     }
-
-    if (druidExpression.isSimpleExtraction()) {
-      return new LikeDimFilter(
-          druidExpression.getSimpleExtraction().getColumn(),
-          RexLiteral.stringValue(operands.get(1)),
-          operands.size() > 2 ? RexLiteral.stringValue(operands.get(2)) : null,
-          druidExpression.getSimpleExtraction().getExtractionFn()
-      );
-    } else {
-      VirtualColumn v = querySignature.getOrCreateVirtualColumnForExpression(
-          plannerContext,
-          druidExpression,
-          operands.get(0).getType().getSqlTypeName()
-      );
-      if (v == null) {
-        return null;
-      }
-      return new LikeDimFilter(
-          v.getOutputName(),
-          RexLiteral.stringValue(operands.get(1)),
-          operands.size() > 2 ? RexLiteral.stringValue(operands.get(2)) : null,
-          null
-      );
-    }
+    return new LikeDimFilter(
+        druidExpression.getSimpleExtraction().getColumn(),
+        RexLiteral.stringValue(operands.get(1)),
+        operands.size() > 2 ? RexLiteral.stringValue(operands.get(2)) : null,
+        druidExpression.getSimpleExtraction().getExtractionFn()
+    );
   }
 }

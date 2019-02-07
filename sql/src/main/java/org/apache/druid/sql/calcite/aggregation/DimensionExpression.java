@@ -19,11 +19,17 @@
 
 package org.apache.druid.sql.calcite.aggregation;
 
+import com.google.common.collect.ImmutableList;
+import org.apache.druid.math.expr.ExprMacroTable;
 import org.apache.druid.query.dimension.DefaultDimensionSpec;
 import org.apache.druid.query.dimension.DimensionSpec;
+import org.apache.druid.segment.VirtualColumn;
 import org.apache.druid.segment.column.ValueType;
 import org.apache.druid.sql.calcite.expression.DruidExpression;
+import org.apache.druid.sql.calcite.planner.Calcites;
 
+import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Objects;
 
 public class DimensionExpression
@@ -58,8 +64,23 @@ public class DimensionExpression
     if (expression.isSimpleExtraction()) {
       return expression.getSimpleExtraction().toDimensionSpec(outputName, outputType);
     } else {
-      return new DefaultDimensionSpec(getOutputName(), getOutputName(), outputType);
+      return new DefaultDimensionSpec(getVirtualColumnName(), getOutputName(), outputType);
     }
+  }
+
+  public List<VirtualColumn> getVirtualColumns(final ExprMacroTable macroTable)
+  {
+    if (expression.isSimpleExtraction()) {
+      return ImmutableList.of();
+    } else {
+      return ImmutableList.of(expression.toVirtualColumn(getVirtualColumnName(), outputType, macroTable));
+    }
+  }
+
+  @Nullable
+  public String getVirtualColumnName()
+  {
+    return expression.isSimpleExtraction() ? null : Calcites.makePrefixedName(outputName, "v");
   }
 
   @Override

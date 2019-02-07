@@ -44,6 +44,7 @@ import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.common.granularity.Granularity;
+import org.apache.druid.math.expr.ExprMacroTable;
 import org.apache.druid.math.expr.ExprType;
 import org.apache.druid.math.expr.Parser;
 import org.apache.druid.query.DataSource;
@@ -83,15 +84,11 @@ import org.apache.druid.sql.calcite.planner.PlannerContext;
 import org.apache.druid.sql.calcite.rule.GroupByRules;
 import org.apache.druid.sql.calcite.table.RowSignature;
 
-import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
@@ -102,6 +99,7 @@ import java.util.stream.Collectors;
 public class DruidQuery
 {
   private final DataSource dataSource;
+  private final RowSignature sourceRowSignature;
   private final PlannerContext plannerContext;
 
   @Nullable
@@ -127,8 +125,6 @@ public class DruidQuery
 
   private final Query query;
 
-  private final DruidQuerySignature sourceQuerySignature;
-
   public DruidQuery(
       final PartialDruidQuery partialQuery,
       final DataSource dataSource,
@@ -139,14 +135,14 @@ public class DruidQuery
   )
   {
     this.dataSource = dataSource;
+    this.sourceRowSignature = sourceRowSignature;
     this.outputRowType = partialQuery.leafRel().getRowType();
-    this.sourceQuerySignature = new DruidQuerySignature(sourceRowSignature);
     this.plannerContext = plannerContext;
 
     // Now the fun begins.
-    this.filter = computeWhereFilter(partialQuery, plannerContext, sourceQuerySignature);
-    this.selectProjection = computeSelectProjection(partialQuery, plannerContext, sourceQuerySignature);
-    this.grouping = computeGrouping(partialQuery, plannerContext, sourceQuerySignature, rexBuilder, finalizeAggregations);
+    this.filter = computeWhereFilter(partialQuery, sourceRowSignature, plannerContext);
+    this.selectProjection = computeSelectProjection(partialQuery, plannerContext, sourceRowSignature);
+    this.grouping = computeGrouping(partialQuery, plannerContext, sourceRowSignature, rexBuilder, finalizeAggregations);
 
     final RowSignature sortingInputRowSignature;
 
@@ -170,8 +166,8 @@ public class DruidQuery
   @Nullable
   private static DimFilter computeWhereFilter(
       final PartialDruidQuery partialQuery,
-      final PlannerContext plannerContext,
-      final DruidQuerySignature querySignature
+      final RowSignature sourceRowSignature,
+      final PlannerContext plannerContext
   )
   {
     final Filter whereFilter = partialQuery.getWhereFilter();
@@ -180,40 +176,14 @@ public class DruidQuery
       return null;
     }
 
-    return getDimFilter(plannerContext, querySignature, whereFilter);
-  }
-
-  @Nullable
-  private static DimFilter computeHavingFilter(
-      final PartialDruidQuery partialQuery,
-      final PlannerContext plannerContext,
-      final DruidQuerySignature querySignature
-  )
-  {
-    final Filter havingFilter = partialQuery.getHavingFilter();
-
-    if (havingFilter == null) {
-      return null;
-    }
-
-    return getDimFilter(plannerContext, querySignature, havingFilter);
-  }
-
-  @Nonnull
-  private static DimFilter getDimFilter(
-      final PlannerContext plannerContext,
-      final DruidQuerySignature querySignature,
-      Filter filter
-  )
-  {
-    final RexNode condition = filter.getCondition();
+    final RexNode condition = whereFilter.getCondition();
     final DimFilter dimFilter = Expressions.toFilter(
         plannerContext,
-        querySignature,
+        sourceRowSignature,
         condition
     );
     if (dimFilter == null) {
-      throw new CannotBuildQueryException(filter, condition);
+      throw new CannotBuildQueryException(whereFilter, condition);
     } else {
       return dimFilter;
     }
@@ -223,7 +193,7 @@ public class DruidQuery
   private static SelectProjection computeSelectProjection(
       final PartialDruidQuery partialQuery,
       final PlannerContext plannerContext,
-      final DruidQuerySignature queryColumns
+      final RowSignature sourceRowSignature
   )
   {
     final Project project = partialQuery.getSelectProject();
@@ -237,7 +207,7 @@ public class DruidQuery
     for (final RexNode rexNode : project.getChildExps()) {
       final DruidExpression expression = Expressions.toDruidExpression(
           plannerContext,
-          queryColumns.getRowSignature(),
+          sourceRowSignature,
           rexNode
       );
 
@@ -249,8 +219,14 @@ public class DruidQuery
     }
 
     final List<String> directColumns = new ArrayList<>();
-    final Set<VirtualColumn> virtualColumns = new HashSet<>();
+    final List<VirtualColumn> virtualColumns = new ArrayList<>();
     final List<String> rowOrder = new ArrayList<>();
+
+    final String virtualColumnPrefix = Calcites.findUnusedPrefix(
+        "v",
+        new TreeSet<>(sourceRowSignature.getRowOrder())
+    );
+    int virtualColumnNameCounter = 0;
 
     for (int i = 0; i < expressions.size(); i++) {
       final DruidExpression expression = expressions.get(i);
@@ -258,28 +234,26 @@ public class DruidQuery
         directColumns.add(expression.getDirectColumn());
         rowOrder.add(expression.getDirectColumn());
       } else {
-        VirtualColumn virtualColumn = queryColumns.getOrCreateVirtualColumnForExpression(
-            plannerContext,
-            expression,
-            project.getChildExps().get(i).getType().getSqlTypeName()
+        final String virtualColumnName = virtualColumnPrefix + virtualColumnNameCounter++;
+        virtualColumns.add(
+            expression.toVirtualColumn(
+                virtualColumnName,
+                Calcites.getValueTypeForSqlTypeName(project.getChildExps().get(i).getType().getSqlTypeName()),
+                plannerContext.getExprMacroTable()
+            )
         );
-        virtualColumns.add(virtualColumn);
-        rowOrder.add(virtualColumn.getOutputName());
+        rowOrder.add(virtualColumnName);
       }
     }
 
-    return new SelectProjection(
-        directColumns,
-        ImmutableList.copyOf(virtualColumns),
-        RowSignature.from(rowOrder, project.getRowType())
-    );
+    return new SelectProjection(directColumns, virtualColumns, RowSignature.from(rowOrder, project.getRowType()));
   }
 
   @Nullable
   private static Grouping computeGrouping(
       final PartialDruidQuery partialQuery,
       final PlannerContext plannerContext,
-      final DruidQuerySignature queryColumns,
+      final RowSignature sourceRowSignature,
       final RexBuilder rexBuilder,
       final boolean finalizeAggregations
   )
@@ -291,11 +265,11 @@ public class DruidQuery
       return null;
     }
 
-    final List<DimensionExpression> dimensions = computeDimensions(partialQuery, plannerContext, queryColumns);
+    final List<DimensionExpression> dimensions = computeDimensions(partialQuery, plannerContext, sourceRowSignature);
     final List<Aggregation> aggregations = computeAggregations(
         partialQuery,
         plannerContext,
-        queryColumns,
+        sourceRowSignature,
         rexBuilder,
         finalizeAggregations
     );
@@ -310,11 +284,10 @@ public class DruidQuery
         aggregate.getRowType()
     );
 
-    DruidQuerySignature aggregateContext = queryColumns.withRowSignature(aggregateRowSignature).asImmutable();
     final DimFilter havingFilter = computeHavingFilter(
         partialQuery,
-        plannerContext,
-        aggregateContext
+        aggregateRowSignature,
+        plannerContext
     );
 
     if (aggregateProject == null) {
@@ -441,7 +414,7 @@ public class DruidQuery
    *
    * @param partialQuery       partial query
    * @param plannerContext     planner context
-   * @param querySignature     source row signature and re-usable virtual column references
+   * @param sourceRowSignature source row signature
    *
    * @return dimensions
    *
@@ -450,20 +423,21 @@ public class DruidQuery
   private static List<DimensionExpression> computeDimensions(
       final PartialDruidQuery partialQuery,
       final PlannerContext plannerContext,
-      final DruidQuerySignature querySignature
+      final RowSignature sourceRowSignature
   )
   {
     final Aggregate aggregate = Preconditions.checkNotNull(partialQuery.getAggregate());
     final List<DimensionExpression> dimensions = new ArrayList<>();
-    final String outputNamePrefix = Calcites.findUnusedPrefix("d", new TreeSet<>(querySignature.getRowSignature().getRowOrder()));
+    final String outputNamePrefix = Calcites.findUnusedPrefix("d", new TreeSet<>(sourceRowSignature.getRowOrder()));
     int outputNameCounter = 0;
 
     for (int i : aggregate.getGroupSet()) {
       // Dimension might need to create virtual columns. Avoid giving it a name that would lead to colliding columns.
-      final RexNode rexNode = Expressions.fromFieldAccess(querySignature.getRowSignature(), partialQuery.getSelectProject(), i);
+      final String dimOutputName = outputNamePrefix + outputNameCounter++;
+      final RexNode rexNode = Expressions.fromFieldAccess(sourceRowSignature, partialQuery.getSelectProject(), i);
       final DruidExpression druidExpression = Expressions.toDruidExpression(
           plannerContext,
-          querySignature.getRowSignature(),
+          sourceRowSignature,
           rexNode
       );
       if (druidExpression == null) {
@@ -477,16 +451,6 @@ public class DruidQuery
         throw new CannotBuildQueryException(aggregate, rexNode);
       }
 
-      final VirtualColumn virtualColumn;
-
-      final String dimOutputName;
-      if (!druidExpression.isSimpleExtraction()) {
-        virtualColumn = querySignature.getOrCreateVirtualColumnForExpression(plannerContext, druidExpression, sqlTypeName);
-        dimOutputName = virtualColumn.getOutputName();
-      } else {
-        dimOutputName = outputNamePrefix + outputNameCounter++;
-      }
-
       dimensions.add(new DimensionExpression(dimOutputName, druidExpression, outputType));
     }
 
@@ -498,7 +462,7 @@ public class DruidQuery
    *
    * @param partialQuery         partial query
    * @param plannerContext       planner context
-   * @param querySignature       source row signature and re-usable virtual column references
+   * @param sourceRowSignature   source row signature
    * @param rexBuilder           calcite RexBuilder
    * @param finalizeAggregations true if this query should include explicit finalization for all of its
    *                             aggregators, where required. Useful for subqueries where Druid's native query layer
@@ -511,26 +475,26 @@ public class DruidQuery
   private static List<Aggregation> computeAggregations(
       final PartialDruidQuery partialQuery,
       final PlannerContext plannerContext,
-      final DruidQuerySignature querySignature,
+      final RowSignature sourceRowSignature,
       final RexBuilder rexBuilder,
       final boolean finalizeAggregations
   )
   {
     final Aggregate aggregate = Preconditions.checkNotNull(partialQuery.getAggregate());
     final List<Aggregation> aggregations = new ArrayList<>();
-    final String outputNamePrefix = Calcites.findUnusedPrefix("a", new TreeSet<>(querySignature.getRowSignature().getRowOrder()));
+    final String outputNamePrefix = Calcites.findUnusedPrefix("a", new TreeSet<>(sourceRowSignature.getRowOrder()));
 
     for (int i = 0; i < aggregate.getAggCallList().size(); i++) {
       final String aggName = outputNamePrefix + i;
       final AggregateCall aggCall = aggregate.getAggCallList().get(i);
       final Aggregation aggregation = GroupByRules.translateAggregateCall(
           plannerContext,
-          querySignature,
+          sourceRowSignature,
           rexBuilder,
           partialQuery.getSelectProject(),
+          aggCall,
           aggregations,
           aggName,
-          aggCall,
           finalizeAggregations
       );
 
@@ -542,6 +506,32 @@ public class DruidQuery
     }
 
     return aggregations;
+  }
+
+  @Nullable
+  private static DimFilter computeHavingFilter(
+      final PartialDruidQuery partialQuery,
+      final RowSignature outputRowSignature,
+      final PlannerContext plannerContext
+  )
+  {
+    final Filter havingFilter = partialQuery.getHavingFilter();
+
+    if (havingFilter == null) {
+      return null;
+    }
+
+    final RexNode condition = havingFilter.getCondition();
+    final DimFilter dimFilter = Expressions.toFilter(
+        plannerContext,
+        outputRowSignature,
+        condition
+    );
+    if (dimFilter == null) {
+      throw new CannotBuildQueryException(havingFilter, condition);
+    } else {
+      return dimFilter;
+    }
   }
 
   @Nullable
@@ -639,43 +629,27 @@ public class DruidQuery
     return toExprType.equals(fromExprType);
   }
 
-  public VirtualColumns getVirtualColumns(final boolean includeDimensions)
+  public VirtualColumns getVirtualColumns(final ExprMacroTable macroTable, final boolean includeDimensions)
   {
-    // 'sourceRowSignature' could provide a list of all defined virtual columns while constructing a query, but we
-    // still want to collect the set of VirtualColumns this way to ensure we only add what is still being used after
-    // the various transforms and optimizations
-    Set<VirtualColumn> virtualColumns = new HashSet<>();
+    final List<VirtualColumn> retVal = new ArrayList<>();
 
-    // we always want to add any virtual columns used by the query level DimFilter
-    if (filter != null) {
-      for (String columnName : filter.getRequiredColumns()) {
-        if (sourceQuerySignature.isVirtualColumnDefined(columnName)) {
-          virtualColumns.add(sourceQuerySignature.getVirtualColumn(columnName));
-        }
-      }
-    }
     if (selectProjection != null) {
-      virtualColumns.addAll(selectProjection.getVirtualColumns());
+      retVal.addAll(selectProjection.getVirtualColumns());
     } else {
       if (grouping != null) {
         if (includeDimensions) {
-          for (DimensionExpression expression : grouping.getDimensions()) {
-            if (sourceQuerySignature.isVirtualColumnDefined(expression.getOutputName())) {
-              virtualColumns.add(sourceQuerySignature.getVirtualColumn(expression.getOutputName()));
-            }
+          for (DimensionExpression dimensionExpression : grouping.getDimensions()) {
+            retVal.addAll(dimensionExpression.getVirtualColumns(macroTable));
           }
         }
 
         for (Aggregation aggregation : grouping.getAggregations()) {
-          virtualColumns.addAll(aggregation.getVirtualColumns());
+          retVal.addAll(aggregation.getVirtualColumns());
         }
       }
     }
 
-    // sort for predictable output
-    List<VirtualColumn> columns = new ArrayList<>(virtualColumns);
-    columns.sort(Comparator.comparing(VirtualColumn::getOutputName));
-    return VirtualColumns.create(columns);
+    return VirtualColumns.create(retVal);
   }
 
   public Grouping getGrouping()
@@ -696,6 +670,11 @@ public class DruidQuery
   public RelDataType getOutputRowType()
   {
     return outputRowType;
+  }
+
+  public RowSignature getSourceRowSignature()
+  {
+    return sourceRowSignature;
   }
 
   public RowSignature getOutputRowSignature()
@@ -815,7 +794,7 @@ public class DruidQuery
       return null;
     }
 
-    final Filtration filtration = Filtration.create(filter).optimize(sourceQuerySignature);
+    final Filtration filtration = Filtration.create(filter).optimize(sourceRowSignature);
 
     final List<PostAggregator> postAggregators = new ArrayList<>(grouping.getPostAggregators());
     if (sortProject != null) {
@@ -829,7 +808,7 @@ public class DruidQuery
         dataSource,
         filtration.getQuerySegmentSpec(),
         descending,
-        getVirtualColumns(false),
+        getVirtualColumns(plannerContext.getExprMacroTable(), false),
         filtration.getDimFilter(),
         queryGranularity,
         grouping.getAggregatorFactories(),
@@ -891,7 +870,7 @@ public class DruidQuery
       return null;
     }
 
-    final Filtration filtration = Filtration.create(filter).optimize(sourceQuerySignature);
+    final Filtration filtration = Filtration.create(filter).optimize(sourceRowSignature);
 
     final List<PostAggregator> postAggregators = new ArrayList<>(grouping.getPostAggregators());
     if (sortProject != null) {
@@ -900,7 +879,7 @@ public class DruidQuery
 
     return new TopNQuery(
         dataSource,
-        getVirtualColumns(true),
+        getVirtualColumns(plannerContext.getExprMacroTable(), true),
         dimensionSpec,
         topNMetricSpec,
         limitSpec.getLimit(),
@@ -925,17 +904,8 @@ public class DruidQuery
       return null;
     }
 
-    final Filtration filtration = Filtration.create(filter).optimize(sourceQuerySignature);
+    final Filtration filtration = Filtration.create(filter).optimize(sourceRowSignature);
 
-    final DimFilterHavingSpec havingSpec;
-    if (grouping.getHavingFilter() != null) {
-      havingSpec = new DimFilterHavingSpec(
-          Filtration.create(grouping.getHavingFilter()).optimizeFilterOnly(sourceQuerySignature).getDimFilter(),
-          true
-      );
-    } else {
-      havingSpec = null;
-    }
     final List<PostAggregator> postAggregators = new ArrayList<>(grouping.getPostAggregators());
     if (sortProject != null) {
       postAggregators.addAll(sortProject.getPostAggregators());
@@ -944,13 +914,13 @@ public class DruidQuery
     return new GroupByQuery(
         dataSource,
         filtration.getQuerySegmentSpec(),
-        getVirtualColumns(true),
+        getVirtualColumns(plannerContext.getExprMacroTable(), true),
         filtration.getDimFilter(),
         Granularities.ALL,
         grouping.getDimensionSpecs(),
         grouping.getAggregatorFactories(),
         postAggregators,
-        havingSpec,
+        grouping.getHavingFilter() != null ? new DimFilterHavingSpec(grouping.getHavingFilter(), true) : null,
         limitSpec,
         null,
         ImmutableSortedMap.copyOf(plannerContext.getQueryContext())
@@ -980,7 +950,7 @@ public class DruidQuery
       throw new ISE("WTF?! Attempting to convert to Scan query without any columns?");
     }
 
-    final Filtration filtration = Filtration.create(filter).optimize(sourceQuerySignature);
+    final Filtration filtration = Filtration.create(filter).optimize(sourceRowSignature);
 
     // DefaultLimitSpec (which we use to "remember" limits) is int typed, and Integer.MAX_VALUE means "no limit".
     final long scanLimit = limitSpec == null || limitSpec.getLimit() == Integer.MAX_VALUE
@@ -1013,7 +983,7 @@ public class DruidQuery
       return null;
     }
 
-    final Filtration filtration = Filtration.create(filter).optimize(sourceQuerySignature);
+    final Filtration filtration = Filtration.create(filter).optimize(sourceRowSignature);
     final boolean descending;
     final int threshold;
 
@@ -1041,7 +1011,7 @@ public class DruidQuery
 
     // We need to ask for dummy columns to prevent Select from returning all of them.
     String dummyColumn = "dummy";
-    while (sourceQuerySignature.getRowSignature().getColumnType(dummyColumn) != null
+    while (sourceRowSignature.getColumnType(dummyColumn) != null
            || outputRowSignature.getRowOrder().contains(dummyColumn)) {
       dummyColumn = dummyColumn + "_";
     }
@@ -1074,7 +1044,7 @@ public class DruidQuery
         Granularities.ALL,
         ImmutableList.of(new DefaultDimensionSpec(dummyColumn, dummyColumn)),
         metrics.stream().sorted().distinct().collect(Collectors.toList()),
-        getVirtualColumns(true),
+        getVirtualColumns(plannerContext.getExprMacroTable(), true),
         pagingSpec,
         ImmutableSortedMap.copyOf(plannerContext.getQueryContext())
     );

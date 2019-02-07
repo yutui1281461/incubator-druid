@@ -31,7 +31,7 @@ import org.apache.druid.sql.calcite.aggregation.SqlAggregator;
 import org.apache.druid.sql.calcite.expression.Expressions;
 import org.apache.druid.sql.calcite.filtration.Filtration;
 import org.apache.druid.sql.calcite.planner.PlannerContext;
-import org.apache.druid.sql.calcite.rel.DruidQuerySignature;
+import org.apache.druid.sql.calcite.table.RowSignature;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,12 +52,12 @@ public class GroupByRules
    */
   public static Aggregation translateAggregateCall(
       final PlannerContext plannerContext,
-      final DruidQuerySignature querySignature,
+      final RowSignature sourceRowSignature,
       final RexBuilder rexBuilder,
       final Project project,
+      final AggregateCall call,
       final List<Aggregation> existingAggregations,
       final String name,
-      final AggregateCall call,
       final boolean finalizeAggregations
   )
   {
@@ -71,11 +71,11 @@ public class GroupByRules
       }
 
       final RexNode expression = project.getChildExps().get(call.filterArg);
-      final DimFilter nonOptimizedFilter = Expressions.toFilter(plannerContext, querySignature, expression);
+      final DimFilter nonOptimizedFilter = Expressions.toFilter(plannerContext, sourceRowSignature, expression);
       if (nonOptimizedFilter == null) {
         return null;
       } else {
-        filter = Filtration.create(nonOptimizedFilter).optimizeFilterOnly(querySignature).getDimFilter();
+        filter = Filtration.create(nonOptimizedFilter).optimizeFilterOnly(sourceRowSignature).getDimFilter();
       }
     } else {
       filter = null;
@@ -121,9 +121,12 @@ public class GroupByRules
 
     final Aggregation retVal = sqlAggregator.toDruidAggregation(
         plannerContext,
-        querySignature,
+        sourceRowSignature,
         rexBuilder,
-        name, call, project, existingAggregationsWithSameFilter,
+        name,
+        call,
+        project,
+        existingAggregationsWithSameFilter,
         finalizeAggregations
     );
 
@@ -134,7 +137,7 @@ public class GroupByRules
       if (isUsingExistingAggregation(retVal, existingAggregationsWithSameFilter)) {
         return retVal;
       } else {
-        return retVal.filter(querySignature, filter);
+        return retVal.filter(sourceRowSignature, filter);
       }
     }
   }
