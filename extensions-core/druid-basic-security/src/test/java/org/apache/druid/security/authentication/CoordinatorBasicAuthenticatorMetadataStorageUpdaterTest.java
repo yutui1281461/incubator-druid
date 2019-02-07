@@ -29,7 +29,6 @@ import org.apache.druid.security.basic.BasicAuthUtils;
 import org.apache.druid.security.basic.BasicSecurityDBResourceException;
 import org.apache.druid.security.basic.authentication.BasicHTTPAuthenticator;
 import org.apache.druid.security.basic.authentication.db.updater.CoordinatorBasicAuthenticatorMetadataStorageUpdater;
-import org.apache.druid.security.basic.authentication.entity.BasicAuthConfig;
 import org.apache.druid.security.basic.authentication.entity.BasicAuthenticatorCredentialUpdate;
 import org.apache.druid.security.basic.authentication.entity.BasicAuthenticatorCredentials;
 import org.apache.druid.security.basic.authentication.entity.BasicAuthenticatorUser;
@@ -46,7 +45,6 @@ import java.util.Map;
 public class CoordinatorBasicAuthenticatorMetadataStorageUpdaterTest
 {
   private static final String AUTHENTICATOR_NAME = "test";
-
   @Rule
   public ExpectedException expectedException = ExpectedException.none();
 
@@ -65,6 +63,7 @@ public class CoordinatorBasicAuthenticatorMetadataStorageUpdaterTest
     connector = derbyConnectorRule.getConnector();
     tablesConfig = derbyConnectorRule.metadataTablesConfigSupplier().get();
     connector.createConfigTable();
+
     updater = new CoordinatorBasicAuthenticatorMetadataStorageUpdater(
         new AuthenticatorMapper(
             ImmutableMap.of(
@@ -73,18 +72,6 @@ public class CoordinatorBasicAuthenticatorMetadataStorageUpdaterTest
                     null,
                     "test",
                     "test",
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    false,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
                     null,
                     null,
                     null,
@@ -113,23 +100,15 @@ public class CoordinatorBasicAuthenticatorMetadataStorageUpdaterTest
   @Test
   public void createUser()
   {
+    updater.createUser(AUTHENTICATOR_NAME, "druid");
     Map<String, BasicAuthenticatorUser> expectedUserMap = ImmutableMap.of(
         "druid", new BasicAuthenticatorUser("druid", null)
     );
-    byte[] expectedSerializeUserMap = BasicAuthUtils.serializeAuthenticatorUserMap(objectMapper, expectedUserMap);
-
-    updater.createUser(AUTHENTICATOR_NAME, "druid");
-    Assert.assertArrayEquals(expectedSerializeUserMap, updater.getCurrentUserMapBytes(AUTHENTICATOR_NAME));
-
     Map<String, BasicAuthenticatorUser> actualUserMap = BasicAuthUtils.deserializeAuthenticatorUserMap(
         objectMapper,
         updater.getCurrentUserMapBytes(AUTHENTICATOR_NAME)
     );
     Assert.assertEquals(expectedUserMap, actualUserMap);
-
-    // Validate cache user map methods
-    Assert.assertEquals(expectedUserMap, updater.getCachedUserMap(AUTHENTICATOR_NAME));
-    Assert.assertArrayEquals(expectedSerializeUserMap, updater.getCachedSerializedUserMap(AUTHENTICATOR_NAME));
 
     // create duplicate should fail
     expectedException.expect(BasicSecurityDBResourceException.class);
@@ -140,23 +119,14 @@ public class CoordinatorBasicAuthenticatorMetadataStorageUpdaterTest
   @Test
   public void deleteUser()
   {
-    Map<String, BasicAuthenticatorUser> expectedUserMap = ImmutableMap.of();
-    byte[] expectedSerializeUserMap = BasicAuthUtils.serializeAuthenticatorUserMap(objectMapper, expectedUserMap);
-
     updater.createUser(AUTHENTICATOR_NAME, "druid");
     updater.deleteUser(AUTHENTICATOR_NAME, "druid");
-
-    Assert.assertArrayEquals(expectedSerializeUserMap, updater.getCurrentUserMapBytes(AUTHENTICATOR_NAME));
-
+    Map<String, BasicAuthenticatorUser> expectedUserMap = ImmutableMap.of();
     Map<String, BasicAuthenticatorUser> actualUserMap = BasicAuthUtils.deserializeAuthenticatorUserMap(
         objectMapper,
         updater.getCurrentUserMapBytes(AUTHENTICATOR_NAME)
     );
     Assert.assertEquals(expectedUserMap, actualUserMap);
-
-    // Validate cache user map methods
-    Assert.assertEquals(expectedUserMap, updater.getCachedUserMap(AUTHENTICATOR_NAME));
-    Assert.assertArrayEquals(expectedSerializeUserMap, updater.getCachedSerializedUserMap(AUTHENTICATOR_NAME));
 
     // delete non-existent user should fail
     expectedException.expect(BasicSecurityDBResourceException.class);
@@ -183,63 +153,6 @@ public class CoordinatorBasicAuthenticatorMetadataStorageUpdaterTest
     );
 
     Assert.assertArrayEquals(credentials.getHash(), recalculatedHash);
-
-    // Validate cache user map methods
-    Map<String, BasicAuthenticatorUser> expectedUserMap = ImmutableMap.of(
-        "druid", new BasicAuthenticatorUser("druid", credentials)
-    );
-    byte[] expectedSerializeUserMap = BasicAuthUtils.serializeAuthenticatorUserMap(objectMapper, expectedUserMap);
-    Assert.assertArrayEquals(expectedSerializeUserMap, updater.getCurrentUserMapBytes(AUTHENTICATOR_NAME));
-    Assert.assertEquals(expectedUserMap, updater.getCachedUserMap(AUTHENTICATOR_NAME));
-    Assert.assertArrayEquals(expectedSerializeUserMap, updater.getCachedSerializedUserMap(AUTHENTICATOR_NAME));
-  }
-
-  @Test
-  public void updateConfig()
-  {
-    BasicAuthConfig config = new BasicAuthConfig(
-        "https://testUrl",
-        "testUser",
-        "testPassword",
-        "testDn",
-        "testUserSearch",
-        "testUserAttribute",
-        new String[]{"testGroupFilter"}
-    );
-    byte[] serializedConfig = BasicAuthUtils.serializeAuthenticatorConfig(objectMapper, config);
-
-    updater.updateConfig(AUTHENTICATOR_NAME, config);
-
-    Assert.assertArrayEquals(serializedConfig, updater.getCurrentConfigBytes(AUTHENTICATOR_NAME));
-
-    BasicAuthConfig actualConfig = BasicAuthUtils.deserializeAuthenticatorConfig(
-        objectMapper,
-        updater.getCurrentConfigBytes(AUTHENTICATOR_NAME)
-    );
-    Assert.assertNotNull(actualConfig);
-    Assert.assertEquals(config.getUrl(), actualConfig.getUrl());
-    Assert.assertEquals(config.getBindUser(), actualConfig.getBindUser());
-    Assert.assertEquals(config.getBindPassword(), actualConfig.getBindPassword());
-    Assert.assertEquals(config.getBaseDn(), actualConfig.getBaseDn());
-    Assert.assertEquals(config.getUserSearch(), actualConfig.getUserSearch());
-    Assert.assertEquals(config.getUserAttribute(), actualConfig.getUserAttribute());
-    Assert.assertArrayEquals(config.getGroupFilters(), actualConfig.getGroupFilters());
-
-    // Validate cache config methods
-    BasicAuthConfig cachedConfig = updater.getCachedConfig(AUTHENTICATOR_NAME);
-    Assert.assertNotNull(actualConfig);
-    Assert.assertEquals(config.getUrl(), cachedConfig.getUrl());
-    Assert.assertEquals(config.getBindUser(), cachedConfig.getBindUser());
-    Assert.assertEquals(config.getBindPassword(), cachedConfig.getBindPassword());
-    Assert.assertEquals(config.getBaseDn(), cachedConfig.getBaseDn());
-    Assert.assertEquals(config.getUserSearch(), cachedConfig.getUserSearch());
-    Assert.assertEquals(config.getUserAttribute(), cachedConfig.getUserAttribute());
-    Assert.assertArrayEquals(config.getGroupFilters(), cachedConfig.getGroupFilters());
-
-    Assert.assertArrayEquals(serializedConfig, updater.getCachedSerializedConfig(AUTHENTICATOR_NAME));
-
-    // update duplicate should not fail
-    updater.updateConfig(AUTHENTICATOR_NAME, config);
   }
 
 }

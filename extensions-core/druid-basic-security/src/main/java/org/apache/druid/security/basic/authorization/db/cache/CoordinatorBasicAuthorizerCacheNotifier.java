@@ -44,8 +44,7 @@ public class CoordinatorBasicAuthorizerCacheNotifier implements BasicAuthorizerC
 {
 
   private final LifecycleLock lifecycleLock = new LifecycleLock();
-  private CommonCacheNotifier cacheUserNotifier;
-  private CommonCacheNotifier cacheGroupMappingNotifier;
+  private CommonCacheNotifier cacheNotifier;
 
   @Inject
   public CoordinatorBasicAuthorizerCacheNotifier(
@@ -54,18 +53,11 @@ public class CoordinatorBasicAuthorizerCacheNotifier implements BasicAuthorizerC
       @EscalatedClient HttpClient httpClient
   )
   {
-    cacheUserNotifier = new CommonCacheNotifier(
+    cacheNotifier = new CommonCacheNotifier(
         getAuthorizerConfigMap(authorizerMapper),
         discoveryProvider,
         httpClient,
         "/druid-ext/basic-security/authorization/listen/%s",
-        "CoordinatorBasicAuthorizerCacheNotifier"
-    );
-    cacheGroupMappingNotifier = new CommonCacheNotifier(
-        getAuthorizerConfigMap(authorizerMapper),
-        discoveryProvider,
-        httpClient,
-        "/druid-ext/basic-security/authorization/listen/groupMappings/%s",
         "CoordinatorBasicAuthorizerCacheNotifier"
     );
   }
@@ -78,8 +70,7 @@ public class CoordinatorBasicAuthorizerCacheNotifier implements BasicAuthorizerC
     }
 
     try {
-      cacheUserNotifier.start();
-      cacheGroupMappingNotifier.start();
+      cacheNotifier.start();
       lifecycleLock.started();
     }
     finally {
@@ -94,8 +85,7 @@ public class CoordinatorBasicAuthorizerCacheNotifier implements BasicAuthorizerC
       return;
     }
     try {
-      cacheUserNotifier.stop();
-      cacheGroupMappingNotifier.stop();
+      cacheNotifier.stop();
     }
     finally {
       lifecycleLock.exitStop();
@@ -103,17 +93,10 @@ public class CoordinatorBasicAuthorizerCacheNotifier implements BasicAuthorizerC
   }
 
   @Override
-  public void addUpdateUser(String updatedAuthorizerPrefix, byte[] userAndRoleMap)
+  public void addUpdate(String updatedAuthorizerPrefix, byte[] updatedUserMap)
   {
     Preconditions.checkState(lifecycleLock.awaitStarted(1, TimeUnit.MILLISECONDS));
-    cacheUserNotifier.addUpdate(updatedAuthorizerPrefix, userAndRoleMap);
-  }
-
-  @Override
-  public void addUpdateGroupMapping(String updatedAuthorizerPrefix, byte[] groupMappingAndRoleMap)
-  {
-    Preconditions.checkState(lifecycleLock.awaitStarted(1, TimeUnit.MILLISECONDS));
-    cacheGroupMappingNotifier.addUpdate(updatedAuthorizerPrefix, groupMappingAndRoleMap);
+    cacheNotifier.addUpdate(updatedAuthorizerPrefix, updatedUserMap);
   }
 
   private Map<String, BasicAuthDBConfig> getAuthorizerConfigMap(AuthorizerMapper mapper)

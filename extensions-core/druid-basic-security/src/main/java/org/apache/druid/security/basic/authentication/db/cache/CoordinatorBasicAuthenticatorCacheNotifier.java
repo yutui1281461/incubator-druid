@@ -42,9 +42,9 @@ import java.util.concurrent.TimeUnit;
 @ManageLifecycle
 public class CoordinatorBasicAuthenticatorCacheNotifier implements BasicAuthenticatorCacheNotifier
 {
+
   private final LifecycleLock lifecycleLock = new LifecycleLock();
-  private CommonCacheNotifier userCacheNotifier;
-  private CommonCacheNotifier configCacheNotifier;
+  private CommonCacheNotifier cacheNotifier;
 
   @Inject
   public CoordinatorBasicAuthenticatorCacheNotifier(
@@ -53,18 +53,11 @@ public class CoordinatorBasicAuthenticatorCacheNotifier implements BasicAuthenti
       @EscalatedClient HttpClient httpClient
   )
   {
-    userCacheNotifier = new CommonCacheNotifier(
+    cacheNotifier = new CommonCacheNotifier(
         initAuthenticatorConfigMap(authenticatorMapper),
         discoveryProvider,
         httpClient,
         "/druid-ext/basic-security/authentication/listen/%s",
-        "CoordinatorBasicAuthenticatorCacheNotifier"
-    );
-    configCacheNotifier = new CommonCacheNotifier(
-        initAuthenticatorConfigMap(authenticatorMapper),
-        discoveryProvider,
-        httpClient,
-        "/druid-ext/basic-security/authentication/listen/config/%s",
         "CoordinatorBasicAuthenticatorCacheNotifier"
     );
   }
@@ -73,12 +66,11 @@ public class CoordinatorBasicAuthenticatorCacheNotifier implements BasicAuthenti
   public void start()
   {
     if (!lifecycleLock.canStart()) {
-      throw new ISE("Can't start.");
+      throw new ISE("can't start.");
     }
 
     try {
-      userCacheNotifier.start();
-      configCacheNotifier.start();
+      cacheNotifier.start();
       lifecycleLock.started();
     }
     finally {
@@ -93,8 +85,7 @@ public class CoordinatorBasicAuthenticatorCacheNotifier implements BasicAuthenti
       return;
     }
     try {
-      userCacheNotifier.stop();
-      configCacheNotifier.stop();
+      cacheNotifier.stop();
     }
     finally {
       lifecycleLock.exitStop();
@@ -102,17 +93,10 @@ public class CoordinatorBasicAuthenticatorCacheNotifier implements BasicAuthenti
   }
 
   @Override
-  public void addUserUpdate(String updatedAuthenticatorPrefix, byte[] updatedUserMap)
+  public void addUpdate(String updatedAuthorizerPrefix, byte[] updatedUserMap)
   {
     Preconditions.checkState(lifecycleLock.awaitStarted(1, TimeUnit.MILLISECONDS));
-    userCacheNotifier.addUpdate(updatedAuthenticatorPrefix, updatedUserMap);
-  }
-
-  @Override
-  public void addConfigUpdate(String updatedAuthenticatorPrefix, byte[] updatedConfig)
-  {
-    Preconditions.checkState(lifecycleLock.awaitStarted(1, TimeUnit.MILLISECONDS));
-    configCacheNotifier.addUpdate(updatedAuthenticatorPrefix, updatedConfig);
+    cacheNotifier.addUpdate(updatedAuthorizerPrefix, updatedUserMap);
   }
 
   private Map<String, BasicAuthDBConfig> initAuthenticatorConfigMap(AuthenticatorMapper mapper)

@@ -30,13 +30,5 @@ public interface BasicAuthenticatorCacheNotifier
    * @param updatedAuthenticatorPrefix Name of authenticator being updated
    * @param updatedUserMap User map state
    */
-  void addUserUpdate(String updatedAuthenticatorPrefix, byte[] updatedUserMap);
-
-  /**
-   * Send the config state contained in updatedConfig to all non-coordinator Druid services
-   *
-   * @param updatedAuthenticatorPrefix Name of authenticator being updated
-   * @param updatedConfig Config state
-   */
-  void addConfigUpdate(String updatedAuthenticatorPrefix, byte[] updatedConfig);
+  void addUpdate(String updatedAuthenticatorPrefix, byte[] updatedUserMap);
 }

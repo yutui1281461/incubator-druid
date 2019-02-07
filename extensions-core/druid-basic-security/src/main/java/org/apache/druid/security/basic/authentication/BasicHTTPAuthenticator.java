@@ -24,14 +24,13 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.inject.Provider;
-import org.apache.druid.java.util.common.logger.Logger;
+import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.metadata.PasswordProvider;
 import org.apache.druid.security.basic.BasicAuthDBConfig;
 import org.apache.druid.security.basic.BasicAuthUtils;
-import org.apache.druid.security.basic.BasicSecurityAuthenticationException;
 import org.apache.druid.security.basic.authentication.db.cache.BasicAuthenticatorCacheManager;
-import org.apache.druid.security.basic.authentication.validator.CredentialsValidator;
-import org.apache.druid.security.basic.authentication.validator.DBCredentialsValidator;
+import org.apache.druid.security.basic.authentication.entity.BasicAuthenticatorCredentials;
+import org.apache.druid.security.basic.authentication.entity.BasicAuthenticatorUser;
 import org.apache.druid.server.security.AuthConfig;
 import org.apache.druid.server.security.AuthenticationResult;
 import org.apache.druid.server.security.Authenticator;
@@ -47,20 +46,17 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Map;
 
 @JsonTypeName("basic")
 public class BasicHTTPAuthenticator implements Authenticator
 {
-  private static final Logger LOG = new Logger(BasicHTTPAuthenticator.class);
-
   private final Provider<BasicAuthenticatorCacheManager> cacheManager;
   private final String name;
   private final String authorizerName;
   private final BasicAuthDBConfig dbConfig;
-  private final CredentialsValidator credentialsValidator;
-  private final boolean skipOnFailure;
 
   @JsonCreator
   public BasicHTTPAuthenticator(
@@ -71,19 +67,7 @@ public class BasicHTTPAuthenticator implements Authenticator
       @JsonProperty("initialInternalClientPassword") PasswordProvider initialInternalClientPassword,
       @JsonProperty("enableCacheNotifications") Boolean enableCacheNotifications,
       @JsonProperty("cacheNotificationTimeout") Long cacheNotificationTimeout,
-      @JsonProperty("credentialIterations") Integer credentialIterations,
-      @JsonProperty("skipOnFailure") Boolean skipOnFailure,
-      @JsonProperty("credentialsValidator") CredentialsValidator credentialsValidator,
-      @JsonProperty("credentialsValidator.url") String url,
-      @JsonProperty("credentialsValidator.bindUser") String bindUser,
-      @JsonProperty("credentialsValidator.bindPassword") PasswordProvider bindPassword,
-      @JsonProperty("credentialsValidator.baseDn") String baseDn,
-      @JsonProperty("credentialsValidator.userSearch") String userSearch,
-      @JsonProperty("credentialsValidator.userAttribute") String userAttribute,
-      @JsonProperty("credentialsValidator.groupFilters") String[] groupFilters,
-      @JsonProperty("credentialsValidator.credentialVerifyDuration") Integer credentialVerifyDuration,
-      @JsonProperty("credentialsValidator.credentialMaxDuration") Integer credentialMaxDuration,
-      @JsonProperty("credentialsValidator.credentialCacheSize") Integer credentialCacheSize
+      @JsonProperty("credentialIterations") Integer credentialIterations
   )
   {
     this.name = name;
@@ -91,30 +75,11 @@ public class BasicHTTPAuthenticator implements Authenticator
     this.dbConfig = new BasicAuthDBConfig(
         initialAdminPassword,
         initialInternalClientPassword,
-        null,
-        null,
-        null,
         enableCacheNotifications == null ? true : enableCacheNotifications,
         cacheNotificationTimeout == null ? BasicAuthDBConfig.DEFAULT_CACHE_NOTIFY_TIMEOUT_MS : cacheNotificationTimeout,
-        credentialIterations == null ? BasicAuthUtils.DEFAULT_KEY_ITERATIONS : credentialIterations,
-        url,
-        bindUser,
-        bindPassword,
-        baseDn,
-        userSearch,
-        userAttribute,
-        groupFilters,
-        credentialVerifyDuration,
-        credentialMaxDuration,
-        credentialCacheSize
+        credentialIterations == null ? BasicAuthUtils.DEFAULT_KEY_ITERATIONS : credentialIterations
     );
     this.cacheManager = cacheManager;
-    if (credentialsValidator == null) {
-      this.credentialsValidator = new DBCredentialsValidator(this.cacheManager);
-    } else {
-      this.credentialsValidator = credentialsValidator;
-    }
-    this.skipOnFailure = skipOnFailure;
   }
 
   @Override
@@ -140,7 +105,11 @@ public class BasicHTTPAuthenticator implements Authenticator
       return null;
     }
 
-    return credentialsValidator.validateCredentials(name, authorizerName, user, password.toCharArray());
+    if (checkCredentials(user, password.toCharArray())) {
+      return new AuthenticationResult(user, authorizerName, name, null);
+    } else {
+      return null;
+    }
   }
 
 
@@ -196,7 +165,8 @@ public class BasicHTTPAuthenticator implements Authenticator
       }
 
       // At this point, encodedUserSecret is not null, indicating that the request intends to perform
-      // Basic HTTP authentication.
+      // Basic HTTP authentication. If any errors occur with the authentication, we send a 401 response immediately
+      // and do not proceed further down the filter chain.
       String decodedUserSecret = BasicAuthUtils.decodeUserSecret(encodedUserSecret);
       if (decodedUserSecret == null) {
         // We recognized a Basic auth header, but could not decode the user secret.
@@ -206,7 +176,6 @@ public class BasicHTTPAuthenticator implements Authenticator
 
       String[] splits = decodedUserSecret.split(":");
       if (splits.length != 2) {
-        // The decoded user secret is not of the right format
         httpResp.sendError(HttpServletResponse.SC_UNAUTHORIZED);
         return;
       }
@@ -214,33 +183,13 @@ public class BasicHTTPAuthenticator implements Authenticator
       String user = splits[0];
       char[] password = splits[1].toCharArray();
 
-      // If any authentication error occurs we send a 401 response immediately and do not proceed further down the filter chain.
-      // If the authentication result is null and skipOnFailure property is false, we send a 401 response and do not proceed
-      // further down the filter chain. If the authentication result is null and skipOnFailure is true then move on to the next filter.
-      // Authentication results, for instance, can be null if a user doesn't exists within a user store
-      try {
-        AuthenticationResult authenticationResult = credentialsValidator.validateCredentials(
-            name,
-            authorizerName,
-            user,
-            password
-        );
-        if (authenticationResult != null) {
-          servletRequest.setAttribute(AuthConfig.DRUID_AUTHENTICATION_RESULT, authenticationResult);
-          filterChain.doFilter(servletRequest, servletResponse);
-        } else {
-          if (skipOnFailure) {
-            LOG.info("Skipping failed authenticator %s ", name);
-            filterChain.doFilter(servletRequest, servletResponse);
-          } else {
-            httpResp.sendError(HttpServletResponse.SC_UNAUTHORIZED);
-          }
-        }
+      if (checkCredentials(user, password)) {
+        AuthenticationResult authenticationResult = new AuthenticationResult(user, authorizerName, name, null);
+        servletRequest.setAttribute(AuthConfig.DRUID_AUTHENTICATION_RESULT, authenticationResult);
+        filterChain.doFilter(servletRequest, servletResponse);
+      } else {
+        httpResp.sendError(HttpServletResponse.SC_UNAUTHORIZED);
       }
-      catch (BasicSecurityAuthenticationException ex) {
-        httpResp.sendError(HttpServletResponse.SC_UNAUTHORIZED, ex.getMessage());
-      }
-
     }
 
     @Override
@@ -248,5 +197,30 @@ public class BasicHTTPAuthenticator implements Authenticator
     {
 
     }
+  }
+
+  private boolean checkCredentials(String username, char[] password)
+  {
+    Map<String, BasicAuthenticatorUser> userMap = cacheManager.get().getUserMap(name);
+    if (userMap == null) {
+      throw new IAE("No authenticator found with prefix: [%s]", name);
+    }
+
+    BasicAuthenticatorUser user = userMap.get(username);
+    if (user == null) {
+      return false;
+    }
+    BasicAuthenticatorCredentials credentials = user.getCredentials();
+    if (credentials == null) {
+      return false;
+    }
+
+    byte[] recalculatedHash = BasicAuthUtils.hashPassword(
+        password,
+        credentials.getSalt(),
+        credentials.getIterations()
+    );
+
+    return Arrays.equals(recalculatedHash, credentials.getHash());
   }
 }

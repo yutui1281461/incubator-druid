@@ -26,15 +26,9 @@ public interface BasicAuthorizerCacheNotifier
 {
   /**
    * Send the user map state contained in updatedUserMap to all non-coordinator Druid services
-   *  @param authorizerPrefix Name of authorizer being updated
+   *
+   * @param authorizerPrefix Name of authorizer being updated
    * @param userAndRoleMap User/role map state
    */
-  void addUpdateUser(String authorizerPrefix, byte[] userAndRoleMap);
-
-  /**
-   * Send the groupMapping map state contained in updatedGroupMappingMap to all non-coordinator Druid services
-   *  @param authorizerPrefix Name of authorizer being updated
-   * @param groupMappingAndRoleMap Group/role map state
-   */
-  void addUpdateGroupMapping(String authorizerPrefix, byte[] groupMappingAndRoleMap);
+  void addUpdate(String authorizerPrefix, byte[] userAndRoleMap);
 }

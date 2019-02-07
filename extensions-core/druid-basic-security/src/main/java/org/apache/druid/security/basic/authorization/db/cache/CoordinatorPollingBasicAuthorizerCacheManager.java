@@ -43,10 +43,8 @@ import org.apache.druid.security.basic.BasicAuthUtils;
 import org.apache.druid.security.basic.authentication.BytesFullResponseHandler;
 import org.apache.druid.security.basic.authentication.BytesFullResponseHolder;
 import org.apache.druid.security.basic.authorization.BasicRoleBasedAuthorizer;
-import org.apache.druid.security.basic.authorization.entity.BasicAuthorizerGroupMapping;
 import org.apache.druid.security.basic.authorization.entity.BasicAuthorizerRole;
 import org.apache.druid.security.basic.authorization.entity.BasicAuthorizerUser;
-import org.apache.druid.security.basic.authorization.entity.GroupMappingAndRoleMap;
 import org.apache.druid.security.basic.authorization.entity.UserAndRoleMap;
 import org.apache.druid.server.security.Authorizer;
 import org.apache.druid.server.security.AuthorizerMapper;
@@ -71,8 +69,6 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
 
   private final ConcurrentHashMap<String, Map<String, BasicAuthorizerUser>> cachedUserMaps;
   private final ConcurrentHashMap<String, Map<String, BasicAuthorizerRole>> cachedRoleMaps;
-  private final ConcurrentHashMap<String, Map<String, BasicAuthorizerGroupMapping>> cachedGroupMappingMaps;
-  private final ConcurrentHashMap<String, Map<String, BasicAuthorizerRole>> cachedGroupMappingRoleMaps;
 
   private final Set<String> authorizerPrefixes;
   private final Injector injector;
@@ -96,8 +92,6 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
     this.objectMapper = objectMapper;
     this.cachedUserMaps = new ConcurrentHashMap<>();
     this.cachedRoleMaps = new ConcurrentHashMap<>();
-    this.cachedGroupMappingMaps = new ConcurrentHashMap<>();
-    this.cachedGroupMappingRoleMaps = new ConcurrentHashMap<>();
     this.authorizerPrefixes = new HashSet<>();
     this.druidLeaderClient = druidLeaderClient;
   }
@@ -124,7 +118,7 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
               LOG.debug("Inserting random polling delay of [%s] ms", randomDelay);
               Thread.sleep(randomDelay);
 
-              LOG.debug("Scheduled userMap cache poll is running");
+              LOG.debug("Scheduled cache poll is running");
               for (String authorizerPrefix : authorizerPrefixes) {
                 UserAndRoleMap userAndRoleMap = fetchUserAndRoleMapFromCoordinator(authorizerPrefix, false);
                 if (userAndRoleMap != null) {
@@ -132,36 +126,10 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
                   cachedRoleMaps.put(authorizerPrefix, userAndRoleMap.getRoleMap());
                 }
               }
-              LOG.debug("Scheduled userMap cache poll is done");
+              LOG.debug("Scheduled cache poll is done");
             }
             catch (Throwable t) {
               LOG.makeAlert(t, "Error occured while polling for cachedUserMaps.").emit();
-            }
-          }
-      );
-
-      ScheduledExecutors.scheduleWithFixedDelay(
-          exec,
-          new Duration(commonCacheConfig.getPollingPeriod()),
-          new Duration(commonCacheConfig.getPollingPeriod()),
-          () -> {
-            try {
-              long randomDelay = ThreadLocalRandom.current().nextLong(0, commonCacheConfig.getMaxRandomDelay());
-              LOG.debug("Inserting random polling delay of [%s] ms", randomDelay);
-              Thread.sleep(randomDelay);
-
-              LOG.debug("Scheduled groupMappingMap cache poll is running");
-              for (String authorizerPrefix : authorizerPrefixes) {
-                GroupMappingAndRoleMap groupMappingAndRoleMap = fetchGroupAndRoleMapFromCoordinator(authorizerPrefix, false);
-                if (groupMappingAndRoleMap != null) {
-                  cachedGroupMappingMaps.put(authorizerPrefix, groupMappingAndRoleMap.getGroupMappingMap());
-                  cachedGroupMappingRoleMaps.put(authorizerPrefix, groupMappingAndRoleMap.getRoleMap());
-                }
-              }
-              LOG.debug("Scheduled groupMappingMap cache poll is done");
-            }
-            catch (Throwable t) {
-              LOG.makeAlert(t, "Error occured while polling for cachedGroupMappingMaps.").emit();
             }
           }
       );
@@ -187,9 +155,9 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
   }
 
   @Override
-  public void handleAuthorizerUserUpdate(String authorizerPrefix, byte[] serializedUserAndRoleMap)
+  public void handleAuthorizerUpdate(String authorizerPrefix, byte[] serializedUserAndRoleMap)
   {
-    LOG.debug("Received userMap cache update for authorizer [%s].", authorizerPrefix);
+    LOG.debug("Received cache update for authorizer [%s].", authorizerPrefix);
     Preconditions.checkState(lifecycleLock.awaitStarted(1, TimeUnit.MILLISECONDS));
     try {
       UserAndRoleMap userAndRoleMap = objectMapper.readValue(
@@ -201,34 +169,11 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
       cachedRoleMaps.put(authorizerPrefix, userAndRoleMap.getRoleMap());
 
       if (commonCacheConfig.getCacheDirectory() != null) {
-        writeUserMapToDisk(authorizerPrefix, serializedUserAndRoleMap);
+        writeMapToDisk(authorizerPrefix, serializedUserAndRoleMap);
       }
     }
     catch (Exception e) {
       LOG.makeAlert(e, "WTF? Could not deserialize user/role map received from coordinator.").emit();
-    }
-  }
-
-  @Override
-  public void handleAuthorizerGroupMappingUpdate(String authorizerPrefix, byte[] serializedGroupMappingAndRoleMap)
-  {
-    LOG.debug("Received groupMappingMap cache update for authorizer [%s].", authorizerPrefix);
-    Preconditions.checkState(lifecycleLock.awaitStarted(1, TimeUnit.MILLISECONDS));
-    try {
-      GroupMappingAndRoleMap groupMappingAndRoleMap = objectMapper.readValue(
-          serializedGroupMappingAndRoleMap,
-          BasicAuthUtils.AUTHORIZER_GROUP_MAPPING_AND_ROLE_MAP_TYPE_REFERENCE
-      );
-
-      cachedGroupMappingMaps.put(authorizerPrefix, groupMappingAndRoleMap.getGroupMappingMap());
-      cachedGroupMappingRoleMaps.put(authorizerPrefix, groupMappingAndRoleMap.getRoleMap());
-
-      if (commonCacheConfig.getCacheDirectory() != null) {
-        writeGroupMappingMapToDisk(authorizerPrefix, serializedGroupMappingAndRoleMap);
-      }
-    }
-    catch (Exception e) {
-      LOG.makeAlert(e, "Could not deserialize groupMapping/role map received from coordinator.").emit();
     }
   }
 
@@ -244,26 +189,9 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
     return cachedRoleMaps.get(authorizerPrefix);
   }
 
-  @Override
-  public Map<String, BasicAuthorizerGroupMapping> getGroupMappingMap(String authorizerPrefix)
-  {
-    return cachedGroupMappingMaps.get(authorizerPrefix);
-  }
-
-  @Override
-  public Map<String, BasicAuthorizerRole> getGroupMappingRoleMap(String authorizerPrefix)
-  {
-    return cachedGroupMappingRoleMaps.get(authorizerPrefix);
-  }
-
   private String getUserRoleMapFilename(String prefix)
   {
-    return StringUtils.format("%s.authorizer.userRole.cache", prefix);
-  }
-
-  private String getGroupMappingRoleMapFilename(String prefix)
-  {
-    return StringUtils.format("%s.authorizer.groupMappingRole.cache", prefix);
+    return StringUtils.format("%s.authorizer.cache", prefix);
   }
 
   @Nullable
@@ -279,20 +207,7 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
     );
   }
 
-  @Nullable
-  private GroupMappingAndRoleMap loadGroupMappingAndRoleMapFromDisk(String prefix) throws IOException
-  {
-    File groupMappingAndRoleMapFile = new File(commonCacheConfig.getCacheDirectory(), getGroupMappingRoleMapFilename(prefix));
-    if (!groupMappingAndRoleMapFile.exists()) {
-      return null;
-    }
-    return objectMapper.readValue(
-        groupMappingAndRoleMapFile,
-        BasicAuthUtils.AUTHORIZER_GROUP_MAPPING_AND_ROLE_MAP_TYPE_REFERENCE
-    );
-  }
-
-  private void writeUserMapToDisk(String prefix, byte[] userMapBytes) throws IOException
+  private void writeMapToDisk(String prefix, byte[] userMapBytes) throws IOException
   {
     File cacheDir = new File(commonCacheConfig.getCacheDirectory());
     cacheDir.mkdirs();
@@ -306,27 +221,13 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
     );
   }
 
-  private void writeGroupMappingMapToDisk(String prefix, byte[] groupMappingBytes) throws IOException
-  {
-    File cacheDir = new File(commonCacheConfig.getCacheDirectory());
-    cacheDir.mkdirs();
-    File groupMapFile = new File(commonCacheConfig.getCacheDirectory(), getGroupMappingRoleMapFilename(prefix));
-    FileUtils.writeAtomically(
-        groupMapFile,
-        out -> {
-          out.write(groupMappingBytes);
-          return null;
-        }
-    );
-  }
-
   @Nullable
   private UserAndRoleMap fetchUserAndRoleMapFromCoordinator(String prefix, boolean isInit)
   {
     try {
       return RetryUtils.retry(
           () -> {
-            return tryFetchUserMapsFromCoordinator(prefix);
+            return tryFetchMapsFromCoordinator(prefix);
           },
           e -> true,
           commonCacheConfig.getMaxSyncRetries()
@@ -351,38 +252,7 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
     }
   }
 
-  @Nullable
-  private GroupMappingAndRoleMap fetchGroupAndRoleMapFromCoordinator(String prefix, boolean isInit)
-  {
-    try {
-      return RetryUtils.retry(
-          () -> {
-            return tryFetchGroupMappingMapsFromCoordinator(prefix);
-          },
-          e -> true,
-          commonCacheConfig.getMaxSyncRetries()
-      );
-    }
-    catch (Exception e) {
-      LOG.makeAlert(e, "Encountered exception while fetching group and role map for authorizer [%s]", prefix).emit();
-      if (isInit) {
-        if (commonCacheConfig.getCacheDirectory() != null) {
-          try {
-            LOG.info("Attempting to load group map snapshot from disk.");
-            return loadGroupMappingAndRoleMapFromDisk(prefix);
-          }
-          catch (Exception e2) {
-            e2.addSuppressed(e);
-            LOG.makeAlert(e2, "Encountered exception while loading group-role map snapshot for authorizer [%s]", prefix)
-               .emit();
-          }
-        }
-      }
-      return null;
-    }
-  }
-
-  private UserAndRoleMap tryFetchUserMapsFromCoordinator(
+  private UserAndRoleMap tryFetchMapsFromCoordinator(
       String prefix
   ) throws Exception
   {
@@ -401,33 +271,9 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
         BasicAuthUtils.AUTHORIZER_USER_AND_ROLE_MAP_TYPE_REFERENCE
     );
     if (userAndRoleMap != null && commonCacheConfig.getCacheDirectory() != null) {
-      writeUserMapToDisk(prefix, userRoleMapBytes);
+      writeMapToDisk(prefix, userRoleMapBytes);
     }
     return userAndRoleMap;
-  }
-
-  private GroupMappingAndRoleMap tryFetchGroupMappingMapsFromCoordinator(
-      String prefix
-  ) throws Exception
-  {
-    Request req = druidLeaderClient.makeRequest(
-        HttpMethod.GET,
-        StringUtils.format("/druid-ext/basic-security/authorization/db/%s/cachedSerializedGroupMappingMap", prefix)
-    );
-    BytesFullResponseHolder responseHolder = (BytesFullResponseHolder) druidLeaderClient.go(
-        req,
-        new BytesFullResponseHandler()
-    );
-    byte[] groupRoleMapBytes = responseHolder.getBytes();
-
-    GroupMappingAndRoleMap groupMappingAndRoleMap = objectMapper.readValue(
-        groupRoleMapBytes,
-        BasicAuthUtils.AUTHORIZER_GROUP_MAPPING_AND_ROLE_MAP_TYPE_REFERENCE
-    );
-    if (groupMappingAndRoleMap != null && commonCacheConfig.getCacheDirectory() != null) {
-      writeGroupMappingMapToDisk(prefix, groupRoleMapBytes);
-    }
-    return groupMappingAndRoleMap;
   }
 
   private void initUserMaps()
@@ -443,17 +289,10 @@ public class CoordinatorPollingBasicAuthorizerCacheManager implements BasicAutho
       if (authorizer instanceof BasicRoleBasedAuthorizer) {
         String authorizerName = entry.getKey();
         authorizerPrefixes.add(authorizerName);
-
         UserAndRoleMap userAndRoleMap = fetchUserAndRoleMapFromCoordinator(authorizerName, true);
         if (userAndRoleMap != null) {
           cachedUserMaps.put(authorizerName, userAndRoleMap.getUserMap());
           cachedRoleMaps.put(authorizerName, userAndRoleMap.getRoleMap());
-        }
-
-        GroupMappingAndRoleMap groupMappingAndRoleMap = fetchGroupAndRoleMapFromCoordinator(authorizerName, true);
-        if (groupMappingAndRoleMap != null) {
-          cachedGroupMappingMaps.put(authorizerName, groupMappingAndRoleMap.getGroupMappingMap());
-          cachedGroupMappingRoleMaps.put(authorizerName, groupMappingAndRoleMap.getRoleMap());
         }
       }
     }

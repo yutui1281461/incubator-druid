@@ -31,7 +31,6 @@ import org.apache.druid.security.basic.BasicAuthUtils;
 import org.apache.druid.security.basic.BasicSecurityDBResourceException;
 import org.apache.druid.security.basic.authorization.BasicRoleBasedAuthorizer;
 import org.apache.druid.security.basic.authorization.db.updater.CoordinatorBasicAuthorizerMetadataStorageUpdater;
-import org.apache.druid.security.basic.authorization.entity.BasicAuthorizerGroupMapping;
 import org.apache.druid.security.basic.authorization.entity.BasicAuthorizerPermission;
 import org.apache.druid.security.basic.authorization.entity.BasicAuthorizerRole;
 import org.apache.druid.security.basic.authorization.entity.BasicAuthorizerUser;
@@ -102,8 +101,6 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
                     null,
                     AUTHORIZER_NAME,
                     null,
-                    null,
-                    null, null,
                     null
                 )
             )
@@ -142,42 +139,12 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
   }
 
   @Test
-  public void testCreateDeleteGroupMapping()
-  {
-    updater.createGroupMapping(AUTHORIZER_NAME, new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-    Map<String, BasicAuthorizerGroupMapping> expectedGroupMappingMap = new HashMap<>();
-    expectedGroupMappingMap.put("druid", new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-    Map<String, BasicAuthorizerGroupMapping> actualGroupMappingMap = BasicAuthUtils.deserializeAuthorizerGroupMappingMap(
-        objectMapper,
-        updater.getCurrentGroupMappingMapBytes(AUTHORIZER_NAME)
-    );
-    Assert.assertEquals(expectedGroupMappingMap, actualGroupMappingMap);
-
-    updater.deleteGroupMapping(AUTHORIZER_NAME, "druid");
-    expectedGroupMappingMap.remove("druid");
-    actualGroupMappingMap = BasicAuthUtils.deserializeAuthorizerGroupMappingMap(
-        objectMapper,
-        updater.getCurrentGroupMappingMapBytes(AUTHORIZER_NAME)
-    );
-    Assert.assertEquals(expectedGroupMappingMap, actualGroupMappingMap);
-  }
-
-  @Test
   public void testDeleteNonExistentUser()
   {
     expectedException.expect(BasicSecurityDBResourceException.class);
     expectedException.expectMessage("User [druid] does not exist.");
     updater.deleteUser(AUTHORIZER_NAME, "druid");
   }
-
-  @Test
-  public void testDeleteNonExistentGroupMapping()
-  {
-    expectedException.expect(BasicSecurityDBResourceException.class);
-    expectedException.expectMessage("Group mapping [druid] does not exist.");
-    updater.deleteGroupMapping(AUTHORIZER_NAME, "druid");
-  }
-
 
   @Test
   public void testCreateDuplicateUser()
@@ -188,14 +155,6 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
     updater.createUser(AUTHORIZER_NAME, "druid");
   }
 
-  @Test
-  public void testCreateDuplicateGroupMapping()
-  {
-    expectedException.expect(BasicSecurityDBResourceException.class);
-    expectedException.expectMessage("Group mapping [druid] already exists.");
-    updater.createGroupMapping(AUTHORIZER_NAME, new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-    updater.createGroupMapping(AUTHORIZER_NAME, new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-  }
   // role tests
   @Test
   public void testCreateDeleteRole()
@@ -235,13 +194,13 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
     updater.createRole(AUTHORIZER_NAME, "druid");
   }
 
-  // role, user, and group mapping tests
+  // role and user tests
   @Test
-  public void testAddAndRemoveRoleToUser()
+  public void testAddAndRemoveRole()
   {
     updater.createUser(AUTHORIZER_NAME, "druid");
     updater.createRole(AUTHORIZER_NAME, "druidRole");
-    updater.assignUserRole(AUTHORIZER_NAME, "druid", "druidRole");
+    updater.assignRole(AUTHORIZER_NAME, "druid", "druidRole");
 
     Map<String, BasicAuthorizerUser> expectedUserMap = new HashMap<>(BASE_USER_MAP);
     expectedUserMap.put("druid", new BasicAuthorizerUser("druid", ImmutableSet.of("druidRole")));
@@ -262,7 +221,7 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
     Assert.assertEquals(expectedUserMap, actualUserMap);
     Assert.assertEquals(expectedRoleMap, actualRoleMap);
 
-    updater.unassignUserRole(AUTHORIZER_NAME, "druid", "druidRole");
+    updater.unassignRole(AUTHORIZER_NAME, "druid", "druidRole");
     expectedUserMap.put("druid", new BasicAuthorizerUser("druid", ImmutableSet.of()));
     actualUserMap = BasicAuthUtils.deserializeAuthorizerUserMap(
         objectMapper,
@@ -273,60 +232,13 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
     Assert.assertEquals(expectedRoleMap, actualRoleMap);
   }
 
-  // role, user, and group mapping tests
-  @Test
-  public void testAddAndRemoveRoleToGroupMapping()
-  {
-    updater.createGroupMapping(AUTHORIZER_NAME, new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-    updater.createRole(AUTHORIZER_NAME, "druidRole");
-    updater.assignGroupMappingRole(AUTHORIZER_NAME, "druid", "druidRole");
-
-    Map<String, BasicAuthorizerGroupMapping> expectedGroupMappingMap = new HashMap<>();
-    expectedGroupMappingMap.put("druid", new BasicAuthorizerGroupMapping("druid", "CN=test", ImmutableSet.of("druidRole")));
-
-    Map<String, BasicAuthorizerRole> expectedRoleMap = new HashMap<>(BASE_ROLE_MAP);
-    expectedRoleMap.put("druidRole", new BasicAuthorizerRole("druidRole", ImmutableList.of()));
-
-    Map<String, BasicAuthorizerGroupMapping> actualGroupMappingMap = BasicAuthUtils.deserializeAuthorizerGroupMappingMap(
-        objectMapper,
-        updater.getCurrentGroupMappingMapBytes(AUTHORIZER_NAME)
-    );
-
-    Map<String, BasicAuthorizerRole> actualRoleMap = BasicAuthUtils.deserializeAuthorizerRoleMap(
-        objectMapper,
-        updater.getCurrentRoleMapBytes(AUTHORIZER_NAME)
-    );
-
-    Assert.assertEquals(expectedGroupMappingMap, actualGroupMappingMap);
-    Assert.assertEquals(expectedRoleMap, actualRoleMap);
-
-    updater.unassignGroupMappingRole(AUTHORIZER_NAME, "druid", "druidRole");
-    expectedGroupMappingMap.put("druid", new BasicAuthorizerGroupMapping("druid", "CN=test", ImmutableSet.of()));
-    actualGroupMappingMap = BasicAuthUtils.deserializeAuthorizerGroupMappingMap(
-        objectMapper,
-        updater.getCurrentGroupMappingMapBytes(AUTHORIZER_NAME)
-    );
-
-    Assert.assertEquals(expectedGroupMappingMap, actualGroupMappingMap);
-    Assert.assertEquals(expectedRoleMap, actualRoleMap);
-  }
-
   @Test
   public void testAddRoleToNonExistentUser()
   {
     expectedException.expect(BasicSecurityDBResourceException.class);
     expectedException.expectMessage("User [nonUser] does not exist.");
     updater.createRole(AUTHORIZER_NAME, "druid");
-    updater.assignUserRole(AUTHORIZER_NAME, "nonUser", "druid");
-  }
-
-  @Test
-  public void testAddRoleToNonExistentGroupMapping()
-  {
-    expectedException.expect(BasicSecurityDBResourceException.class);
-    expectedException.expectMessage("Group mapping [nonUser] does not exist.");
-    updater.createRole(AUTHORIZER_NAME, "druid");
-    updater.assignGroupMappingRole(AUTHORIZER_NAME, "nonUser", "druid");
+    updater.assignRole(AUTHORIZER_NAME, "nonUser", "druid");
   }
 
   @Test
@@ -335,16 +247,7 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
     expectedException.expect(BasicSecurityDBResourceException.class);
     expectedException.expectMessage("Role [nonRole] does not exist.");
     updater.createUser(AUTHORIZER_NAME, "druid");
-    updater.assignUserRole(AUTHORIZER_NAME, "druid", "nonRole");
-  }
-
-  @Test
-  public void testAddNonexistentRoleToGroupMapping()
-  {
-    expectedException.expect(BasicSecurityDBResourceException.class);
-    expectedException.expectMessage("Role [nonRole] does not exist.");
-    updater.createGroupMapping(AUTHORIZER_NAME, new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-    updater.assignGroupMappingRole(AUTHORIZER_NAME, "druid", "nonRole");
+    updater.assignRole(AUTHORIZER_NAME, "druid", "nonRole");
   }
 
   @Test
@@ -354,33 +257,12 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
     expectedException.expectMessage("User [druid] already has role [druidRole].");
     updater.createUser(AUTHORIZER_NAME, "druid");
     updater.createRole(AUTHORIZER_NAME, "druidRole");
-    updater.assignUserRole(AUTHORIZER_NAME, "druid", "druidRole");
-    updater.assignUserRole(AUTHORIZER_NAME, "druid", "druidRole");
+    updater.assignRole(AUTHORIZER_NAME, "druid", "druidRole");
+    updater.assignRole(AUTHORIZER_NAME, "druid", "druidRole");
   }
 
   @Test
-  public void testAddExistingRoleToGroupMappingFails()
-  {
-    expectedException.expect(BasicSecurityDBResourceException.class);
-    expectedException.expectMessage("Group mapping [druid] already has role [druidRole].");
-    updater.createGroupMapping(AUTHORIZER_NAME, new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-    updater.createRole(AUTHORIZER_NAME, "druidRole");
-    updater.assignGroupMappingRole(AUTHORIZER_NAME, "druid", "druidRole");
-    updater.assignGroupMappingRole(AUTHORIZER_NAME, "druid", "druidRole");
-  }
-
-  @Test
-  public void testAddExistingRoleToGroupMappingWithRoleFails()
-  {
-    expectedException.expect(BasicSecurityDBResourceException.class);
-    expectedException.expectMessage("Group mapping [druid] already has role [druidRole].");
-    updater.createGroupMapping(AUTHORIZER_NAME, new BasicAuthorizerGroupMapping("druid", "CN=test", ImmutableSet.of("druidRole")));
-    updater.createRole(AUTHORIZER_NAME, "druidRole");
-    updater.assignGroupMappingRole(AUTHORIZER_NAME, "druid", "druidRole");
-  }
-
-  @Test
-  public void testUnassignInvalidRoleAssignmentToUserFails()
+  public void testUnassignInvalidRoleAssignmentFails()
   {
     expectedException.expect(BasicSecurityDBResourceException.class);
     expectedException.expectMessage("User [druid] does not have role [druidRole].");
@@ -407,41 +289,8 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
     Assert.assertEquals(expectedUserMap, actualUserMap);
     Assert.assertEquals(expectedRoleMap, actualRoleMap);
 
-    updater.unassignUserRole(AUTHORIZER_NAME, "druid", "druidRole");
+    updater.unassignRole(AUTHORIZER_NAME, "druid", "druidRole");
   }
-
-  @Test
-  public void testUnassignInvalidRoleAssignmentToGroupMappingFails()
-  {
-    expectedException.expect(BasicSecurityDBResourceException.class);
-    expectedException.expectMessage("Group mapping [druid] does not have role [druidRole].");
-
-
-    updater.createGroupMapping(AUTHORIZER_NAME, new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-    updater.createRole(AUTHORIZER_NAME, "druidRole");
-
-    Map<String, BasicAuthorizerGroupMapping> expectedGroupMappingMap = new HashMap<>();
-    expectedGroupMappingMap.put("druid", new BasicAuthorizerGroupMapping("druid", "CN=test", null));
-
-    Map<String, BasicAuthorizerRole> expectedRoleMap = new HashMap<>(BASE_ROLE_MAP);
-    expectedRoleMap.put("druidRole", new BasicAuthorizerRole("druidRole", ImmutableList.of()));
-
-    Map<String, BasicAuthorizerGroupMapping> actualGroupMappingMap = BasicAuthUtils.deserializeAuthorizerGroupMappingMap(
-        objectMapper,
-        updater.getCurrentGroupMappingMapBytes(AUTHORIZER_NAME)
-    );
-
-    Map<String, BasicAuthorizerRole> actualRoleMap = BasicAuthUtils.deserializeAuthorizerRoleMap(
-        objectMapper,
-        updater.getCurrentRoleMapBytes(AUTHORIZER_NAME)
-    );
-
-    Assert.assertEquals(expectedGroupMappingMap, actualGroupMappingMap);
-    Assert.assertEquals(expectedRoleMap, actualRoleMap);
-
-    updater.unassignGroupMappingRole(AUTHORIZER_NAME, "druid", "druidRole");
-  }
-
 
   // role and permission tests
   @Test
@@ -449,7 +298,7 @@ public class CoordinatorBasicAuthorizerMetadataStorageUpdaterTest
   {
     updater.createUser(AUTHORIZER_NAME, "druid");
     updater.createRole(AUTHORIZER_NAME, "druidRole");
-    updater.assignUserRole(AUTHORIZER_NAME, "druid", "druidRole");
+    updater.assignRole(AUTHORIZER_NAME, "druid", "druidRole");
 
     List<ResourceAction> permsToAdd = ImmutableList.of(
         new ResourceAction(
