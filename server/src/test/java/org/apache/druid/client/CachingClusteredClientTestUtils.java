@@ -71,28 +71,28 @@ public final class CachingClusteredClientTestUtils
                 .put(
                     TimeseriesQuery.class,
                     new TimeseriesQueryQueryToolChest(
-                        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
                     )
                 )
                 .put(
                     TopNQuery.class,
                     new TopNQueryQueryToolChest(
                         new TopNQueryConfig(),
-                        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
                     )
                 )
                 .put(
                     SearchQuery.class,
                     new SearchQueryQueryToolChest(
                         new SearchQueryConfig(),
-                        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
                     )
                 )
                 .put(
                     SelectQuery.class,
                     new SelectQueryQueryToolChest(
                         objectMapper,
-                        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator(),
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator(),
                         selectConfigSupplier
                     )
                 )

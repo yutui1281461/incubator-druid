@@ -373,7 +373,7 @@ public class SearchBenchmark
         new SearchStrategySelector(Suppliers.ofInstance(config)),
         new SearchQueryQueryToolChest(
             config,
-            QueryBenchmarkUtil.noopIntervalChunkingQueryRunnerDecorator()
+            QueryBenchmarkUtil.NoopIntervalChunkingQueryRunnerDecorator()
         ),
         QueryBenchmarkUtil.NOOP_QUERYWATCHER
     );

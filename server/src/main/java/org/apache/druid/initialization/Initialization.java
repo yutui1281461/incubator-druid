@@ -79,6 +79,7 @@ import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -86,15 +87,16 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  */
 public class Initialization
 {
   private static final Logger log = new Logger(Initialization.class);
-  private static final ConcurrentHashMap<File, URLClassLoader> loadersMap = new ConcurrentHashMap<>();
+  private static final ConcurrentMap<File, URLClassLoader> loadersMap = new ConcurrentHashMap<>();
 
-  private static final ConcurrentHashMap<Class<?>, Collection<?>> extensionsMap = new ConcurrentHashMap<>();
+  private static final Map<Class, Collection> extensionsMap = new HashMap<>();
 
   /**
    * @param clazz service class
@@ -105,7 +107,7 @@ public class Initialization
   public static <T> Collection<T> getLoadedImplementations(Class<T> clazz)
   {
     @SuppressWarnings("unchecked")
-    Collection<T> retVal = (Collection<T>) extensionsMap.get(clazz);
+    Collection<T> retVal = extensionsMap.get(clazz);
     if (retVal == null) {
       return new HashSet<>();
     }
@@ -136,16 +138,11 @@ public class Initialization
    * elements in the returned collection is not specified and not guaranteed to be the same for different calls to
    * getFromExtensions().
    */
-  public static <T> Collection<T> getFromExtensions(ExtensionsConfig config, Class<T> serviceClass)
+  public static synchronized <T> Collection<T> getFromExtensions(ExtensionsConfig config, Class<T> serviceClass)
   {
-    // It's not clear whether we should recompute modules even if they have been computed already for the serviceClass,
-    // but that's how it used to be an preserving the old behaviour here.
-    Collection<?> modules = extensionsMap.compute(
-        serviceClass,
-        (serviceC, ignored) -> new ServiceLoadingFromExtensions<>(config, serviceC).implsToLoad
-    );
-    //noinspection unchecked
-    return (Collection<T>) modules;
+    Collection<T> modulesToLoad = new ServiceLoadingFromExtensions<>(config, serviceClass).implsToLoad;
+    extensionsMap.put(serviceClass, modulesToLoad);
+    return modulesToLoad;
   }
 
   private static class ServiceLoadingFromExtensions<T>

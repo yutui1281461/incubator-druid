@@ -57,7 +57,7 @@ public class TestQueryRunners
         pool,
         new TopNQueryQueryToolChest(
             topNConfig,
-            QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
         ),
         QueryRunnerTestHelper.NOOP_QUERYWATCHER
     );
@@ -71,7 +71,7 @@ public class TestQueryRunners
   {
     QueryRunnerFactory factory = new TimeseriesQueryRunnerFactory(
         new TimeseriesQueryQueryToolChest(
-            QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()),
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()),
         new TimeseriesQueryEngine(),
         QueryRunnerTestHelper.NOOP_QUERYWATCHER
     );
@@ -89,7 +89,7 @@ public class TestQueryRunners
         new SearchStrategySelector(Suppliers.ofInstance(config)),
         new SearchQueryQueryToolChest(
             config,
-            QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
         ),
         QueryRunnerTestHelper.NOOP_QUERYWATCHER
     );

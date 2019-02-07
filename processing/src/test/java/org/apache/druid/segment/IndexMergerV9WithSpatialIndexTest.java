@@ -574,7 +574,7 @@ public class IndexMergerV9WithSpatialIndexTest
     try {
       TimeseriesQueryRunnerFactory factory = new TimeseriesQueryRunnerFactory(
           new TimeseriesQueryQueryToolChest(
-              QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+              QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
           ),
           new TimeseriesQueryEngine(),
           QueryRunnerTestHelper.NOOP_QUERYWATCHER
@@ -628,7 +628,7 @@ public class IndexMergerV9WithSpatialIndexTest
     try {
       TimeseriesQueryRunnerFactory factory = new TimeseriesQueryRunnerFactory(
           new TimeseriesQueryQueryToolChest(
-              QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+              QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
           ),
           new TimeseriesQueryEngine(),
           QueryRunnerTestHelper.NOOP_QUERYWATCHER
@@ -717,7 +717,7 @@ public class IndexMergerV9WithSpatialIndexTest
     try {
       TimeseriesQueryRunnerFactory factory = new TimeseriesQueryRunnerFactory(
           new TimeseriesQueryQueryToolChest(
-              QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+              QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
           ),
           new TimeseriesQueryEngine(),
           QueryRunnerTestHelper.NOOP_QUERYWATCHER

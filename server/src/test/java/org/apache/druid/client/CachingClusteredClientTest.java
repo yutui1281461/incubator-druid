@@ -444,7 +444,7 @@ public class CachingClusteredClientTest
 
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new TimeseriesQueryQueryToolChest(
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
 
@@ -483,7 +483,7 @@ public class CachingClusteredClientTest
 
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new TimeseriesQueryQueryToolChest(
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
 
@@ -610,7 +610,7 @@ public class CachingClusteredClientTest
 
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(),
-        new TimeseriesQueryQueryToolChest(QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator())
+        new TimeseriesQueryQueryToolChest(QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator())
     );
 
     testQueryCaching(
@@ -671,7 +671,7 @@ public class CachingClusteredClientTest
 
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new TimeseriesQueryQueryToolChest(
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
 
@@ -716,7 +716,7 @@ public class CachingClusteredClientTest
                                                         .context(CONTEXT);
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(),
-        new TimeseriesQueryQueryToolChest(QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator())
+        new TimeseriesQueryQueryToolChest(QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator())
     );
     testQueryCaching(
         runner,
@@ -792,7 +792,7 @@ public class CachingClusteredClientTest
         getDefaultQueryRunner(),
         new TopNQueryQueryToolChest(
             new TopNQueryConfig(),
-            QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
         )
     );
 
@@ -869,7 +869,7 @@ public class CachingClusteredClientTest
         getDefaultQueryRunner(),
         new TopNQueryQueryToolChest(
             new TopNQueryConfig(),
-            QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
         )
     );
 
@@ -974,7 +974,7 @@ public class CachingClusteredClientTest
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new TopNQueryQueryToolChest(
         new TopNQueryConfig(),
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
     testQueryCaching(
@@ -1047,7 +1047,7 @@ public class CachingClusteredClientTest
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new TopNQueryQueryToolChest(
         new TopNQueryConfig(),
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
     testQueryCaching(
@@ -1148,7 +1148,7 @@ public class CachingClusteredClientTest
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new SearchQueryQueryToolChest(
         new SearchQueryConfig(),
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
     HashMap<String, Object> context = new HashMap<String, Object>();
@@ -1218,7 +1218,7 @@ public class CachingClusteredClientTest
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new SearchQueryQueryToolChest(
         new SearchQueryConfig(),
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
     HashMap<String, Object> context = new HashMap<String, Object>();
@@ -1316,7 +1316,7 @@ public class CachingClusteredClientTest
         getDefaultQueryRunner(),
         new SelectQueryQueryToolChest(
             JSON_MAPPER,
-            QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator(),
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator(),
             SELECT_CONFIG_SUPPLIER
         )
     );
@@ -1394,7 +1394,7 @@ public class CachingClusteredClientTest
         getDefaultQueryRunner(),
         new SelectQueryQueryToolChest(
             JSON_MAPPER,
-            QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator(),
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator(),
             SELECT_CONFIG_SUPPLIER
         )
     );
@@ -1638,7 +1638,7 @@ public class CachingClusteredClientTest
 
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new TimeseriesQueryQueryToolChest(
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
 
@@ -1712,7 +1712,7 @@ public class CachingClusteredClientTest
 
     QueryRunner runner = new FinalizeResultsQueryRunner(
         getDefaultQueryRunner(), new TimeseriesQueryQueryToolChest(
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     )
     );
 
@@ -2213,13 +2213,13 @@ public class CachingClusteredClientTest
             expectedResults.get(k).get(j)
         );
         serverExpectations.get(lastServer).addExpectation(expectation);
-
+        EasyMock.expect(mockSegment.getSize()).andReturn(0L).anyTimes();
+        EasyMock.replay(mockSegment);
         ServerSelector selector = new ServerSelector(
             expectation.getSegment(),
             new HighestPriorityTierSelectorStrategy(new RandomServerSelectorStrategy())
         );
         selector.addServerAndUpdateSegment(new QueryableDruidServer(lastServer, null), selector.getSegment());
-
         final ShardSpec shardSpec;
         if (numChunks == 1) {
           shardSpec = new SingleDimensionShardSpec("dimAll", null, null, 0);
@@ -2234,6 +2234,7 @@ public class CachingClusteredClientTest
           }
           shardSpec = new SingleDimensionShardSpec("dim" + k, start, end, j);
         }
+        EasyMock.reset(mockSegment);
         EasyMock.expect(mockSegment.getShardSpec())
                 .andReturn(shardSpec)
                 .anyTimes();

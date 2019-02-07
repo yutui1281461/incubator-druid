@@ -76,8 +76,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.SortedSet;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -100,7 +98,7 @@ public class ParallelIndexSupervisorTask extends AbstractTask implements ChatHan
   private final AuthorizerMapper authorizerMapper;
   private final RowIngestionMetersFactory rowIngestionMetersFactory;
 
-  private final ConcurrentHashMap<Interval, AtomicInteger> partitionNumCountersPerInterval = new ConcurrentHashMap<>();
+  private final Counters counters = new Counters();
 
   private volatile ParallelIndexTaskRunner runner;
 
@@ -379,7 +377,7 @@ public class ParallelIndexSupervisorTask extends AbstractTask implements ChatHan
       throw new ISE("Unspecified interval[%s] in granularitySpec[%s]", interval, granularitySpec);
     }
 
-    final int partitionNum = Counters.incrementAndGetInt(partitionNumCountersPerInterval, interval);
+    final int partitionNum = counters.increment(interval.toString(), 1);
     return new SegmentIdWithShardSpec(
         dataSource,
         interval,

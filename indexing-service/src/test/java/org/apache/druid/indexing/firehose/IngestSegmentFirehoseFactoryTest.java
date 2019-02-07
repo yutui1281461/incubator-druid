@@ -39,6 +39,7 @@ import org.apache.druid.data.input.impl.TimestampSpec;
 import org.apache.druid.guice.GuiceAnnotationIntrospector;
 import org.apache.druid.guice.GuiceInjectableValues;
 import org.apache.druid.guice.GuiceInjectors;
+import org.apache.druid.indexing.common.Counters;
 import org.apache.druid.indexing.common.SegmentLoaderFactory;
 import org.apache.druid.indexing.common.TaskToolboxFactory;
 import org.apache.druid.indexing.common.TestUtils;
@@ -218,7 +219,8 @@ public class IngestSegmentFirehoseFactoryTest
             TASK_STORAGE,
             mdc,
             newMockEmitter(),
-            EasyMock.createMock(SupervisorManager.class)
+            EasyMock.createMock(SupervisorManager.class),
+            new Counters()
         ),
         new TaskAuditLogConfig(false)
     );

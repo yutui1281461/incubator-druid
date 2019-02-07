@@ -73,7 +73,7 @@ public class TopNUnionQueryTest
                     defaultPool,
                     new TopNQueryQueryToolChest(
                         new TopNQueryConfig(),
-                        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
                     ),
                     QueryRunnerTestHelper.NOOP_QUERYWATCHER
                 )
@@ -83,7 +83,7 @@ public class TopNUnionQueryTest
                     customPool,
                     new TopNQueryQueryToolChest(
                         new TopNQueryConfig(),
-                        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
                     ),
                     QueryRunnerTestHelper.NOOP_QUERYWATCHER
                 )
