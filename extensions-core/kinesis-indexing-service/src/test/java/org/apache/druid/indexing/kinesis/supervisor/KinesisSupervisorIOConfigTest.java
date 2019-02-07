@@ -73,6 +73,7 @@ public class KinesisSupervisorIOConfigTest
     Assert.assertEquals((Integer) 0, config.getFetchDelayMillis());
     Assert.assertNull(config.getAwsAssumedRoleArn());
     Assert.assertNull(config.getAwsExternalId());
+    Assert.assertFalse(config.isDeaggregate());
   }
 
   @Test
@@ -95,7 +96,8 @@ public class KinesisSupervisorIOConfigTest
                      + "  \"recordsPerFetch\": 4000,\n"
                      + "  \"fetchDelayMillis\": 1000,\n"
                      + "  \"awsAssumedRoleArn\": \"role\",\n"
-                     + "  \"awsExternalId\": \"awsexternalid\"\n"
+                     + "  \"awsExternalId\": \"awsexternalid\",\n"
+                     + "  \"deaggregate\": true\n"
                      + "}";
 
     KinesisSupervisorIOConfig config = mapper.readValue(
@@ -118,6 +120,7 @@ public class KinesisSupervisorIOConfigTest
     Assert.assertEquals((Integer) 1000, config.getFetchDelayMillis());
     Assert.assertEquals("role", config.getAwsAssumedRoleArn());
     Assert.assertEquals("awsexternalid", config.getAwsExternalId());
+    Assert.assertTrue(config.isDeaggregate());
   }
 
   @Test

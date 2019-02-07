@@ -33,16 +33,10 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.hash.Hashing;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.InvalidProtocolBufferException;
-import org.apache.commons.io.IOUtils;
-import org.apache.druid.indexing.kinesis.protobuf.AggregatedRecordProtos;
 import org.apache.druid.indexing.seekablestream.common.OrderedPartitionableRecord;
 import org.apache.druid.indexing.seekablestream.common.StreamPartition;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.StringUtils;
-import org.checkerframework.com.google.common.base.Charsets;
 import org.easymock.Capture;
 import org.easymock.EasyMockSupport;
 import org.junit.After;
@@ -50,14 +44,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -196,6 +183,7 @@ public class KinesisRecordSupplierTest extends EasyMockSupport
         recordsPerFetch,
         0,
         2,
+        false,
         100,
         5000,
         5000,
@@ -274,6 +262,7 @@ public class KinesisRecordSupplierTest extends EasyMockSupport
         recordsPerFetch,
         0,
         2,
+        false,
         100,
         5000,
         5000,
@@ -345,6 +334,7 @@ public class KinesisRecordSupplierTest extends EasyMockSupport
         recordsPerFetch,
         0,
         2,
+        false,
         100,
         5000,
         5000,
@@ -411,6 +401,7 @@ public class KinesisRecordSupplierTest extends EasyMockSupport
         recordsPerFetch,
         0,
         2,
+        false,
         100,
         5000,
         5000,
@@ -444,6 +435,7 @@ public class KinesisRecordSupplierTest extends EasyMockSupport
         1,
         0,
         2,
+        false,
         100,
         5000,
         5000,
@@ -496,6 +488,7 @@ public class KinesisRecordSupplierTest extends EasyMockSupport
         recordsPerFetch,
         0,
         2,
+        false,
         100,
         5000,
         5000,
@@ -571,11 +564,13 @@ public class KinesisRecordSupplierTest extends EasyMockSupport
         StreamPartition.of(stream, shardId1)
     );
 
+
     recordSupplier = new KinesisRecordSupplier(
         kinesis,
         recordsPerFetch,
         0,
         2,
+        true,
         100,
         5000,
         5000,
@@ -598,149 +593,6 @@ public class KinesisRecordSupplierTest extends EasyMockSupport
 
     Assert.assertEquals(partitions, recordSupplier.getAssignment());
     Assert.assertTrue(polledRecords.containsAll(allRecords));
-  }
-
-  @Test
-  public void testKPLDeaggregationOfProtobufConstructedMessage() throws IOException
-  {
-    List<AggregatedRecordProtos.Record> userRecords = new ArrayList<AggregatedRecordProtos.Record>();
-    for (int i = 0; i < 100; i++) {
-      userRecords.add(AggregatedRecordProtos.Record.newBuilder()
-          .setPartitionKeyIndex(i % 2)
-          .setData(ByteString.copyFromUtf8("This is record " + i))
-          .addTags(AggregatedRecordProtos.Tag.newBuilder()
-              .setKey("tagKey1")
-              .setValue("tagValue1")
-              .build())
-      .build());
-    }
-    AggregatedRecordProtos.AggregatedRecord aggregatedRecord =
-        AggregatedRecordProtos.AggregatedRecord.newBuilder()
-            .addPartitionKeyTable("partitionKey1")
-            .addPartitionKeyTable("partitionKey2")
-            .addExplicitHashKeyTable("explicitHashKey1")
-            .addExplicitHashKeyTable("explicitHashKey2")
-            .addAllRecords(userRecords)
-            .build();
-    byte[] aggregatedRecordBytes = aggregatedRecord.toByteArray();
-    //16 bytes for checksum and 4 bytes for magic number
-    ByteBuffer buff = ByteBuffer.allocate(aggregatedRecordBytes.length + 16 + 4);
-    buff.put((byte) 0xF3);
-    buff.put((byte) 0x89);
-    buff.put((byte) 0x9A);
-    buff.put((byte) 0xC2);
-    buff.put(aggregatedRecordBytes);
-    byte[] messageHash = Hashing.md5().hashBytes(aggregatedRecordBytes).asBytes();
-    buff.put(messageHash);
-    Record record = new Record().withData(buff);
-
-    recordSupplier = new KinesisRecordSupplier(
-        kinesis,
-        recordsPerFetch,
-        0,
-        2,
-        100,
-        5000,
-        5000,
-        60000,
-        5
-    );
-
-    List<byte[]> serializedRecords = recordSupplier.deaggregateKinesisRecord(record);
-    Assert.assertEquals(100, serializedRecords.size());
-    for (int i = 0; i < 100; i++) {
-      Assert.assertEquals(userRecords.get(i).getData().toStringUtf8(),
-          new String(serializedRecords.get(i), StandardCharsets.UTF_8));
-    }
-  }
-
-  @Test
-  public void testDeaggregationOfKPLAggregatedMessage() throws IOException
-  {
-    // TODO Make this a relative path
-    InputStreamReader reader = new InputStreamReader(
-        new FileInputStream("src/test/resources/base64aggregatedkinesismessage.txt"), Charsets.UTF_8);
-    String base64EncodedMessage = IOUtils.toString(reader);
-    reader.close();
-    Assert.assertNotNull(base64EncodedMessage);
-    Record record = new Record().withData(ByteBuffer.wrap(Base64.getDecoder().decode(base64EncodedMessage)));
-
-    recordSupplier = new KinesisRecordSupplier(
-        kinesis,
-        recordsPerFetch,
-        0,
-        2,
-        100,
-        5000,
-        5000,
-        60000,
-        5
-    );
-
-    List<byte[]> recordsFromAggregate = recordSupplier.deaggregateKinesisRecord(record);
-    Assert.assertEquals(50, recordsFromAggregate.size());
-    for (byte[] bytes : recordsFromAggregate) {
-      SerializationPojo pojo = new ObjectMapper().readValue(bytes, SerializationPojo.class);
-      Assert.assertNotNull(pojo.myString);
-      Assert.assertNotNull(pojo.timestamp);
-      Assert.assertNotNull(pojo.myDouble);
-      Assert.assertNotNull(pojo.myInt);
-    }
-  }
-  @Test
-  public void testDeaggregationOfNonAggregatedMessage() throws IOException
-  {
-    InputStreamReader reader = new InputStreamReader(new FileInputStream
-        ("src/test/resources/base64nonaggregatedkinesismessage.txt"), Charsets.UTF_8);
-    String base64EncodedMessage = IOUtils.toString(reader);
-    reader.close();
-    Assert.assertNotNull(base64EncodedMessage);
-    Record record = new Record().withData(ByteBuffer.wrap(Base64.getDecoder().decode(base64EncodedMessage)));
-
-    recordSupplier = new KinesisRecordSupplier(
-        kinesis,
-        recordsPerFetch,
-        0,
-        2,
-        100,
-        5000,
-        5000,
-        60000,
-        5
-    );
-    List<byte[]> recordsFromAggregate = recordSupplier.deaggregateKinesisRecord(record);
-    Assert.assertEquals(1, recordsFromAggregate.size());
-    for (byte[] bytes : recordsFromAggregate) {
-      SerializationPojo pojo = new ObjectMapper().readValue(bytes, SerializationPojo.class);
-      Assert.assertNotNull(pojo.myString);
-      Assert.assertNotNull(pojo.timestamp);
-      Assert.assertNotNull(pojo.myDouble);
-      Assert.assertNotNull(pojo.myInt);
-    }
-  }
-
-  @Test
-  // Verifies that the calculated length of the protobuf message won't be negative (and won't throw
-  // a NegativeArrayLengthException).
-  public void testDeaggregationOfSmallNonAggregatedMessage () throws UnsupportedEncodingException, InvalidProtocolBufferException
-  {
-    //Length of this message is less than (length of checksum + length of magic numbers)
-    String message = "a";
-    Record record = new Record().withData(ByteBuffer.wrap(message.getBytes("utf-8")));
-    recordSupplier = new KinesisRecordSupplier(
-        kinesis,
-        recordsPerFetch,
-        0,
-        2,
-        100,
-        5000,
-        5000,
-        60000,
-        5
-    );
-    List<byte[]> recordsFromAggregate = recordSupplier.deaggregateKinesisRecord(record);
-    Assert.assertEquals(1, recordsFromAggregate.size());
-    Assert.assertEquals("a", new String(recordsFromAggregate.get(0), StandardCharsets.UTF_8));
   }
 
   /**

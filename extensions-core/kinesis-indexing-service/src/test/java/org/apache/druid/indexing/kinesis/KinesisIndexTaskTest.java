@@ -386,7 +386,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
 
     );
@@ -466,7 +467,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
 
     );
@@ -574,7 +576,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
     final ListenableFuture<TaskStatus> future = runTask(task);
@@ -712,7 +715,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -831,7 +835,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -913,7 +918,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1005,7 +1011,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1084,7 +1091,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1146,7 +1154,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1222,7 +1231,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1298,7 +1308,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1363,7 +1374,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1472,7 +1484,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1560,7 +1573,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
     final KinesisIndexTask task2 = createTask(
@@ -1584,7 +1598,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1669,7 +1684,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
     final KinesisIndexTask task2 = createTask(
@@ -1693,7 +1709,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1778,7 +1795,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
     final KinesisIndexTask task2 = createTask(
@@ -1802,7 +1820,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1888,7 +1907,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1977,7 +1997,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
     final KinesisIndexTask task2 = createTask(
@@ -2001,7 +2022,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -2089,7 +2111,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -2147,7 +2170,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             ImmutableSet.of(shardId1),
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -2230,7 +2254,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -2367,7 +2392,8 @@ public class KinesisIndexTaskTest extends EasyMockSupport
             null,
             null,
             null,
-            null
+            null,
+            false
         ),
         context
     );
