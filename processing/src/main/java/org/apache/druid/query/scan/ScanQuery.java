@@ -40,10 +40,6 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
   public static final String RESULT_FORMAT_COMPACTED_LIST = "compactedList";
   public static final String RESULT_FORMAT_VALUE_VECTOR = "valueVector";
 
-  public static final String TIME_ORDER_ASCENDING = "ascending";
-  public static final String TIME_ORDER_DESCENDING = "descending";
-  public static final String TIME_ORDER_NONE = "none";
-
   private final VirtualColumns virtualColumns;
   private final String resultFormat;
   private final int batchSize;
@@ -51,7 +47,6 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
   private final DimFilter dimFilter;
   private final List<String> columns;
   private final Boolean legacy;
-  private final String timeOrder;
 
   @JsonCreator
   public ScanQuery(
@@ -64,8 +59,7 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
       @JsonProperty("filter") DimFilter dimFilter,
       @JsonProperty("columns") List<String> columns,
       @JsonProperty("legacy") Boolean legacy,
-      @JsonProperty("context") Map<String, Object> context,
-      @JsonProperty("timeOrder") String timeOrder
+      @JsonProperty("context") Map<String, Object> context
   )
   {
     super(dataSource, querySegmentSpec, false, context);
@@ -78,7 +72,6 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
     this.dimFilter = dimFilter;
     this.columns = columns;
     this.legacy = legacy;
-    this.timeOrder = timeOrder == null ? TIME_ORDER_NONE : timeOrder;
   }
 
   @JsonProperty
@@ -103,12 +96,6 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
   public long getLimit()
   {
     return limit;
-  }
-
-  @JsonProperty
-  public String getTimeOrder()
-  {
-    return timeOrder;
   }
 
   @Override

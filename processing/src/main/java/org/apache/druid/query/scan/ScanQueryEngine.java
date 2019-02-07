@@ -131,8 +131,7 @@ public class ScanQueryEngine
                     intervals.get(0),
                     query.getVirtualColumns(),
                     Granularities.ALL,
-                    query.getTimeOrder().equals(ScanQuery.TIME_ORDER_DESCENDING) ||
-                    (query.getTimeOrder().equals(ScanQuery.TIME_ORDER_NONE) && query.isDescending()),
+                    query.isDescending(),
                     null
                 )
                 .map(cursor -> new BaseSequence<>(

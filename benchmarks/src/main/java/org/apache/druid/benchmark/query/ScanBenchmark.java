@@ -113,9 +113,6 @@ public class ScanBenchmark
   @Param({"1000", "99999"})
   private int limit;
 
-  @Param({"none", "descending", "ascending"})
-  private static String timeOrdering;
-
   private static final Logger log = new Logger(ScanBenchmark.class);
   private static final ObjectMapper JSON_MAPPER;
   private static final IndexMergerV9 INDEX_MERGER_V9;
@@ -181,8 +178,7 @@ public class ScanBenchmark
 
     return Druids.newScanQueryBuilder()
                  .dataSource("blah")
-                 .intervals(intervalSpec)
-                 .timeOrder(timeOrdering);
+                 .intervals(intervalSpec);
   }
 
   private static Druids.ScanQueryBuilder basicB(final BenchmarkSchemaInfo basicSchema)
@@ -201,8 +197,7 @@ public class ScanBenchmark
 
     return Druids.newScanQueryBuilder()
                  .filters(filter)
-                 .intervals(intervalSpec)
-                 .timeOrder(timeOrdering);
+                 .intervals(intervalSpec);
   }
 
   private static Druids.ScanQueryBuilder basicC(final BenchmarkSchemaInfo basicSchema)
@@ -213,8 +208,7 @@ public class ScanBenchmark
     final String dimName = "dimUniform";
     return Druids.newScanQueryBuilder()
         .filters(new SelectorDimFilter(dimName, "3", StrlenExtractionFn.instance()))
-        .intervals(intervalSpec)
-        .timeOrder(timeOrdering);
+        .intervals(intervalSpec);
   }
 
   private static Druids.ScanQueryBuilder basicD(final BenchmarkSchemaInfo basicSchema)
@@ -227,8 +221,7 @@ public class ScanBenchmark
 
     return Druids.newScanQueryBuilder()
         .filters(new BoundDimFilter(dimName, "100", "10000", true, true, true, null, null))
-        .intervals(intervalSpec)
-        .timeOrder(timeOrdering);
+        .intervals(intervalSpec);
   }
 
   @Setup
