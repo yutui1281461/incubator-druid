@@ -20,6 +20,7 @@
 package org.apache.druid.query.aggregation.datasketches.hll;
 
 import org.apache.druid.data.input.Row;
+import org.apache.druid.initialization.DruidModule;
 import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.query.aggregation.AggregationTestHelper;
@@ -47,9 +48,10 @@ public class HllSketchAggregatorTest
 
   public HllSketchAggregatorTest(GroupByQueryConfig config)
   {
-    HllSketchModule.registerSerde();
+    DruidModule module = new HllSketchModule();
+    module.configure(null);
     helper = AggregationTestHelper.createGroupByQueryAggregationTestHelper(
-        new HllSketchModule().getJacksonModules(), config, tempFolder);
+        module.getJacksonModules(), config, tempFolder);
   }
 
   @Parameterized.Parameters(name = "{0}")

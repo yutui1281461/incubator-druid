@@ -34,8 +34,6 @@ import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 /**
  * Contains a representation of the current state of the cluster by tier.
@@ -55,19 +53,11 @@ public class DruidCluster
   @VisibleForTesting
   public DruidCluster(
       @Nullable Set<ServerHolder> realtimes,
-      Map<String, Iterable<ServerHolder>> historicals
+      Map<String, NavigableSet<ServerHolder>> historicals
   )
   {
     this.realtimes = realtimes == null ? new HashSet<>() : new HashSet<>(realtimes);
-    this.historicals = historicals
-        .entrySet()
-        .stream()
-        .collect(Collectors.toMap(
-            Map.Entry::getKey,
-            e -> StreamSupport
-                .stream(e.getValue().spliterator(), false)
-                .collect(Collectors.toCollection(() -> new TreeSet<>(Collections.reverseOrder())))
-        ));
+    this.historicals = historicals;
   }
 
   public void add(ServerHolder serverHolder)

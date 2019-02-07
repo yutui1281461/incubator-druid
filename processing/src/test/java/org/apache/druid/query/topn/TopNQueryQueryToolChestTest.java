@@ -136,7 +136,7 @@ public class TopNQueryQueryToolChestTest
     TopNQueryConfig config = new TopNQueryConfig();
     final TopNQueryQueryToolChest chest = new TopNQueryQueryToolChest(
         config,
-        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
     );
     try (CloseableStupidPool<ByteBuffer> pool = TestQueryRunners.createDefaultNonBlockingPool()) {
       QueryRunnerFactory factory = new TopNQueryRunnerFactory(

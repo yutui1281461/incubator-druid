@@ -35,7 +35,6 @@ import com.google.inject.name.Names;
 import io.airlift.airline.Arguments;
 import io.airlift.airline.Command;
 import io.airlift.airline.Option;
-import io.netty.util.SuppressForbidden;
 import org.apache.druid.client.cache.CacheConfig;
 import org.apache.druid.client.coordinator.CoordinatorClient;
 import org.apache.druid.client.indexing.HttpIndexingServiceClient;
@@ -346,7 +345,6 @@ public class CliPeon extends GuiceRunnable
     );
   }
 
-  @SuppressForbidden(reason = "System#out, System#err")
   @Override
   public void run()
   {
@@ -377,15 +375,14 @@ public class CliPeon extends GuiceRunnable
           Runtime.getRuntime().removeShutdownHook(hook);
         }
         catch (IllegalStateException e) {
-          System.err.println("Cannot remove shutdown hook, already shutting down!");
+          log.warn("Cannot remove shutdown hook, already shutting down");
         }
       }
       catch (Throwable t) {
-        System.err.println("Error!");
-        System.err.println(Throwables.getStackTraceAsString(t));
+        log.error(t, "Error when starting up.  Failing.");
         System.exit(1);
       }
-      System.out.println("Finished peon task");
+      log.info("Finished peon task");
     }
     catch (Exception e) {
       throw Throwables.propagate(e);

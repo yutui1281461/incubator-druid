@@ -22,12 +22,9 @@ package org.apache.druid.query.aggregation.datasketches.theta;
 import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.Binder;
 import org.apache.druid.initialization.DruidModule;
-import org.apache.druid.query.aggregation.datasketches.theta.sql.ThetaSketchSqlAggregator;
 import org.apache.druid.segment.serde.ComplexMetrics;
-import org.apache.druid.sql.guice.SqlBindings;
 
 import java.util.Collections;
 import java.util.List;
@@ -47,8 +44,17 @@ public class SketchModule implements DruidModule
   @Override
   public void configure(Binder binder)
   {
-    registerSerde();
-    SqlBindings.addAggregator(binder, ThetaSketchSqlAggregator.class);
+    if (ComplexMetrics.getSerdeForType(THETA_SKETCH) == null) {
+      ComplexMetrics.registerSerde(THETA_SKETCH, new SketchMergeComplexMetricSerde());
+    }
+
+    if (ComplexMetrics.getSerdeForType(THETA_SKETCH_MERGE_AGG) == null) {
+      ComplexMetrics.registerSerde(THETA_SKETCH_MERGE_AGG, new SketchMergeComplexMetricSerde());
+    }
+
+    if (ComplexMetrics.getSerdeForType(THETA_SKETCH_BUILD_AGG) == null) {
+      ComplexMetrics.registerSerde(THETA_SKETCH_BUILD_AGG, new SketchBuildComplexMetricSerde());
+    }
   }
 
   @Override
@@ -64,21 +70,5 @@ public class SketchModule implements DruidModule
             )
             .addSerializer(SketchHolder.class, new SketchHolderJsonSerializer())
     );
-  }
-
-  @VisibleForTesting
-  public static void registerSerde()
-  {
-    if (ComplexMetrics.getSerdeForType(THETA_SKETCH) == null) {
-      ComplexMetrics.registerSerde(THETA_SKETCH, new SketchMergeComplexMetricSerde());
-    }
-
-    if (ComplexMetrics.getSerdeForType(THETA_SKETCH_MERGE_AGG) == null) {
-      ComplexMetrics.registerSerde(THETA_SKETCH_MERGE_AGG, new SketchMergeComplexMetricSerde());
-    }
-
-    if (ComplexMetrics.getSerdeForType(THETA_SKETCH_BUILD_AGG) == null) {
-      ComplexMetrics.registerSerde(THETA_SKETCH_BUILD_AGG, new SketchBuildComplexMetricSerde());
-    }
   }
 }

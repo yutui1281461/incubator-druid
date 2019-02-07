@@ -70,7 +70,7 @@ public class MapVirtualColumnSelectTest
     SelectQueryRunnerFactory factory = new SelectQueryRunnerFactory(
         new SelectQueryQueryToolChest(
             new DefaultObjectMapper(),
-            QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator(),
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator(),
             selectConfigSupplier
         ),
         new SelectQueryEngine(),

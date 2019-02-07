@@ -41,11 +41,23 @@ public class SocketUtil
     int currPort = startPort;
 
     while (currPort < 0xffff) {
-      try (ServerSocket socket = new ServerSocket(currPort)) {
+      ServerSocket socket = null;
+      try {
+        socket = new ServerSocket(currPort);
         return currPort;
       }
       catch (IOException e) {
         ++currPort;
+      }
+      finally {
+        if (socket != null) {
+          try {
+            socket.close();
+          }
+          catch (IOException e) {
+
+          }
+        }
       }
     }
 

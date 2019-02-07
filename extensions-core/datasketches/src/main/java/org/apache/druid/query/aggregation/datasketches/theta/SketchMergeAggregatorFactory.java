@@ -25,7 +25,6 @@ import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.aggregation.AggregatorFactoryNotMergeableException;
 import org.apache.druid.query.aggregation.AggregatorUtil;
 
-import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
 
@@ -39,10 +38,10 @@ public class SketchMergeAggregatorFactory extends SketchAggregatorFactory
   public SketchMergeAggregatorFactory(
       @JsonProperty("name") String name,
       @JsonProperty("fieldName") String fieldName,
-      @Nullable @JsonProperty("size") Integer size,
-      @Nullable @JsonProperty("shouldFinalize") Boolean shouldFinalize,
-      @Nullable @JsonProperty("isInputThetaSketch") Boolean isInputThetaSketch,
-      @Nullable @JsonProperty("errorBoundsStdDev") Integer errorBoundsStdDev
+      @JsonProperty("size") Integer size,
+      @JsonProperty("shouldFinalize") Boolean shouldFinalize,
+      @JsonProperty("isInputThetaSketch") Boolean isInputThetaSketch,
+      @JsonProperty("errorBoundsStdDev") Integer errorBoundsStdDev
   )
   {
     super(name, fieldName, size, AggregatorUtil.SKETCH_MERGE_CACHE_TYPE_ID);

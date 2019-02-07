@@ -24,16 +24,13 @@ import com.google.common.base.Throwables;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableSet;
 import org.apache.druid.java.util.common.StringUtils;
-import org.apache.druid.java.util.common.io.Closer;
 import org.apache.druid.java.util.common.logger.Logger;
 
 import java.io.Closeable;
-import java.io.IOException;
 import java.util.ArrayDeque;
-import java.util.Iterator;
 import java.util.Map;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -126,23 +123,13 @@ public class ResourcePool<K, V> implements Closeable
   public void close()
   {
     closed.set(true);
-    final ConcurrentMap<K, ImmediateCreationResourceHolder<K, V>> mapView = pool.asMap();
-    Closer closer = Closer.create();
-    for (Iterator<Map.Entry<K, ImmediateCreationResourceHolder<K, V>>> iterator =
-         mapView.entrySet().iterator(); iterator.hasNext(); ) {
-      Map.Entry<K, ImmediateCreationResourceHolder<K, V>> e = iterator.next();
-      iterator.remove();
-      closer.register(e.getValue());
-    }
-    try {
-      closer.close();
-    }
-    catch (IOException e) {
-      throw new RuntimeException(e);
+    final Map<K, ImmediateCreationResourceHolder<K, V>> mapView = pool.asMap();
+    for (K k : ImmutableSet.copyOf(mapView.keySet())) {
+      mapView.remove(k).close();
     }
   }
 
-  private static class ImmediateCreationResourceHolder<K, V> implements Closeable
+  private static class ImmediateCreationResourceHolder<K, V>
   {
     private final int maxSize;
     private final K key;
@@ -278,8 +265,7 @@ public class ResourcePool<K, V> implements Closeable
       return resourceHolderList.stream().anyMatch(a -> a.getResource().equals(object));
     }
 
-    @Override
-    public void close()
+    void close()
     {
       synchronized (this) {
         closed = true;

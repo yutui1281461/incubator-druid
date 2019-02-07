@@ -98,9 +98,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class SystemSchemaTest extends CalciteTestBase
 {
@@ -130,7 +127,6 @@ public class SystemSchemaTest extends CalciteTestBase
   private AuthorizerMapper authMapper;
   private static QueryRunnerFactoryConglomerate conglomerate;
   private static Closer resourceCloser;
-  private MetadataSegmentView metadataView;
 
   @Rule
   public TemporaryFolder temporaryFolder = new TemporaryFolder();
@@ -219,10 +215,8 @@ public class SystemSchemaTest extends CalciteTestBase
     );
     druidSchema.start();
     druidSchema.awaitInitialization();
-    metadataView = EasyMock.createMock(MetadataSegmentView.class);
     schema = new SystemSchema(
         druidSchema,
-        metadataView,
         serverView,
         EasyMock.createStrictMock(AuthorizerMapper.class),
         client,
@@ -230,44 +224,6 @@ public class SystemSchemaTest extends CalciteTestBase
         mapper
     );
   }
-
-
-  private final DataSegment publishedSegment1 = new DataSegment(
-      "wikipedia1",
-      Intervals.of("2007/2008"),
-      "version1",
-      null,
-      ImmutableList.of("dim1", "dim2"),
-      ImmutableList.of("met1", "met2"),
-      null,
-      1,
-      53000L,
-      DataSegment.PruneLoadSpecHolder.DEFAULT
-  );
-  private final DataSegment publishedSegment2 = new DataSegment(
-      "wikipedia2",
-      Intervals.of("2008/2009"),
-      "version2",
-      null,
-      ImmutableList.of("dim1", "dim2"),
-      ImmutableList.of("met1", "met2"),
-      null,
-      1,
-      83000L,
-      DataSegment.PruneLoadSpecHolder.DEFAULT
-  );
-  private final DataSegment publishedSegment3 = new DataSegment(
-      "wikipedia3",
-      Intervals.of("2009/2010"),
-      "version3",
-      null,
-      ImmutableList.of("dim1", "dim2"),
-      ImmutableList.of("met1", "met2"),
-      null,
-      1,
-      47000L,
-      DataSegment.PruneLoadSpecHolder.DEFAULT
-  );
 
   private final DataSegment segment1 = new DataSegment(
       "test1",
@@ -307,7 +263,7 @@ public class SystemSchemaTest extends CalciteTestBase
   );
   private final DataSegment segment4 = new DataSegment(
       "test4",
-      Intervals.of("2014/2015"),
+      Intervals.of("2017/2018"),
       "version4",
       null,
       ImmutableList.of("dim1", "dim2"),
@@ -319,7 +275,7 @@ public class SystemSchemaTest extends CalciteTestBase
   );
   private final DataSegment segment5 = new DataSegment(
       "test5",
-      Intervals.of("2015/2016"),
+      Intervals.of("2017/2018"),
       "version5",
       null,
       ImmutableList.of("dim1", "dim2"),
@@ -384,22 +340,120 @@ public class SystemSchemaTest extends CalciteTestBase
   }
 
   @Test
-  public void testSegmentsTable()
+  public void testSegmentsTable() throws Exception
   {
 
     final SystemSchema.SegmentsTable segmentsTable = EasyMock
         .createMockBuilder(SystemSchema.SegmentsTable.class)
-        .withConstructor(druidSchema, metadataView, mapper, authMapper)
+        .withConstructor(druidSchema, client, mapper, responseHandler, authMapper)
         .createMock();
     EasyMock.replay(segmentsTable);
-    final Set<DataSegment> publishedSegments = Stream.of(publishedSegment1,
-                                                         publishedSegment2,
-                                                         publishedSegment3,
-                                                         segment1,
-                                                         segment2).collect(Collectors.toSet());
-    EasyMock.expect(metadataView.getPublishedSegments()).andReturn(publishedSegments.iterator()).once();
 
-    EasyMock.replay(client, request, responseHolder, responseHandler, metadataView);
+    EasyMock
+        .expect(client.makeRequest(HttpMethod.GET, "/druid/coordinator/v1/metadata/segments", false))
+        .andReturn(request)
+        .anyTimes();
+    SettableFuture<InputStream> future = SettableFuture.create();
+    EasyMock.expect(client.goAsync(request, responseHandler)).andReturn(future).once();
+    final int ok = HttpServletResponse.SC_OK;
+    EasyMock.expect(responseHandler.getStatus()).andReturn(ok).anyTimes();
+
+    EasyMock
+        .expect(request.getUrl())
+        .andReturn(new URL("http://test-host:1234/druid/coordinator/v1/metadata/segments"))
+        .anyTimes();
+
+    AppendableByteArrayInputStream in = new AppendableByteArrayInputStream();
+    //segments in metadata store : wikipedia1, wikipedia2, wikipedia3, test1, test2
+    final String json = "[{\n"
+                        + "\t\"dataSource\": \"wikipedia1\",\n"
+                        + "\t\"interval\": \"2018-08-07T23:00:00.000Z/2018-08-08T00:00:00.000Z\",\n"
+                        + "\t\"version\": \"2018-08-07T23:00:00.059Z\",\n"
+                        + "\t\"loadSpec\": {\n"
+                        + "\t\t\"type\": \"local\",\n"
+                        + "\t\t\"path\": \"/var/druid/segments/wikipedia-kafka/2018-08-07T23:00:00.000Z_2018-08-08T00:00:00.000Z/2018-08-07T23:00:00.059Z/51/1578eb79-0e44-4b41-a87b-65e40c52be53/index.zip\"\n"
+                        + "\t},\n"
+                        + "\t\"dimensions\": \"isRobot,channel,flags,isUnpatrolled,page,diffUrl,comment,isNew,isMinor,user,namespace,commentLength,deltaBucket,cityName,countryIsoCode,countryName,isAnonymous,regionIsoCode,regionName,added,deleted,delta\",\n"
+                        + "\t\"metrics\": \"count,user_unique\",\n"
+                        + "\t\"shardSpec\": {\n"
+                        + "\t\t\"type\": \"none\",\n"
+                        + "\t\t\"partitionNum\": 51,\n"
+                        + "\t\t\"partitions\": 0\n"
+                        + "\t},\n"
+                        + "\t\"binaryVersion\": 9,\n"
+                        + "\t\"size\": 47406,\n"
+                        + "\t\"identifier\": \"wikipedia-kafka_2018-08-07T23:00:00.000Z_2018-08-08T00:00:00.000Z_2018-08-07T23:00:00.059Z_51\"\n"
+                        + "}, {\n"
+                        + "\t\"dataSource\": \"wikipedia2\",\n"
+                        + "\t\"interval\": \"2018-08-07T18:00:00.000Z/2018-08-07T19:00:00.000Z\",\n"
+                        + "\t\"version\": \"2018-08-07T18:00:00.117Z\",\n"
+                        + "\t\"loadSpec\": {\n"
+                        + "\t\t\"type\": \"local\",\n"
+                        + "\t\t\"path\": \"/var/druid/segments/wikipedia-kafka/2018-08-07T18:00:00.000Z_2018-08-07T19:00:00.000Z/2018-08-07T18:00:00.117Z/9/a2646827-b782-424c-9eed-e48aa448d2c5/index.zip\"\n"
+                        + "\t},\n"
+                        + "\t\"dimensions\": \"isRobot,channel,flags,isUnpatrolled,page,diffUrl,comment,isNew,isMinor,user,namespace,commentLength,deltaBucket,cityName,countryIsoCode,countryName,isAnonymous,metroCode,regionIsoCode,regionName,added,deleted,delta\",\n"
+                        + "\t\"metrics\": \"count,user_unique\",\n"
+                        + "\t\"shardSpec\": {\n"
+                        + "\t\t\"type\": \"none\",\n"
+                        + "\t\t\"partitionNum\": 9,\n"
+                        + "\t\t\"partitions\": 0\n"
+                        + "\t},\n"
+                        + "\t\"binaryVersion\": 9,\n"
+                        + "\t\"size\": 83846,\n"
+                        + "\t\"identifier\": \"wikipedia-kafka_2018-08-07T18:00:00.000Z_2018-08-07T19:00:00.000Z_2018-08-07T18:00:00.117Z_9\"\n"
+                        + "}, {\n"
+                        + "\t\"dataSource\": \"wikipedia3\",\n"
+                        + "\t\"interval\": \"2018-08-07T23:00:00.000Z/2018-08-08T00:00:00.000Z\",\n"
+                        + "\t\"version\": \"2018-08-07T23:00:00.059Z\",\n"
+                        + "\t\"loadSpec\": {\n"
+                        + "\t\t\"type\": \"local\",\n"
+                        + "\t\t\"path\": \"/var/druid/segments/wikipedia-kafka/2018-08-07T23:00:00.000Z_2018-08-08T00:00:00.000Z/2018-08-07T23:00:00.059Z/50/87c5457e-c39b-4c03-9df8-e2b20b210dfc/index.zip\"\n"
+                        + "\t},\n"
+                        + "\t\"dimensions\": \"isRobot,channel,flags,isUnpatrolled,page,diffUrl,comment,isNew,isMinor,user,namespace,commentLength,deltaBucket,cityName,countryIsoCode,countryName,isAnonymous,metroCode,regionIsoCode,regionName,added,deleted,delta\",\n"
+                        + "\t\"metrics\": \"count,user_unique\",\n"
+                        + "\t\"shardSpec\": {\n"
+                        + "\t\t\"type\": \"none\",\n"
+                        + "\t\t\"partitionNum\": 50,\n"
+                        + "\t\t\"partitions\": 0\n"
+                        + "\t},\n"
+                        + "\t\"binaryVersion\": 9,\n"
+                        + "\t\"size\": 53527,\n"
+                        + "\t\"identifier\": \"wikipedia-kafka_2018-08-07T23:00:00.000Z_2018-08-08T00:00:00.000Z_2018-08-07T23:00:00.059Z_50\"\n"
+                        + "}, {\n"
+                        + "\t\"dataSource\": \"test1\",\n"
+                        + "\t\"interval\": \"2010-01-01T00:00:00.000Z/2011-01-01T00:00:00.000Z\",\n"
+                        + "\t\"version\": \"version1\",\n"
+                        + "\t\"loadSpec\": null,\n"
+                        + "\t\"dimensions\": \"dim1,dim2\",\n"
+                        + "\t\"metrics\": \"met1,met2\",\n"
+                        + "\t\"shardSpec\": {\n"
+                        + "\t\t\"type\": \"none\",\n"
+                        + "\t\t\"domainDimensions\": []\n"
+                        + "\t},\n"
+                        + "\t\"binaryVersion\": 1,\n"
+                        + "\t\"size\": 100,\n"
+                        + "\t\"identifier\": \"test1_2010-01-01T00:00:00.000Z_2011-01-01T00:00:00.000Z_version1\"\n"
+                        + "}, {\n"
+                        + "\t\"dataSource\": \"test2\",\n"
+                        + "\t\"interval\": \"2011-01-01T00:00:00.000Z/2012-01-01T00:00:00.000Z\",\n"
+                        + "\t\"version\": \"version2\",\n"
+                        + "\t\"loadSpec\": null,\n"
+                        + "\t\"dimensions\": \"dim1,dim2\",\n"
+                        + "\t\"metrics\": \"met1,met2\",\n"
+                        + "\t\"shardSpec\": {\n"
+                        + "\t\t\"type\": \"none\",\n"
+                        + "\t\t\"domainDimensions\": []\n"
+                        + "\t},\n"
+                        + "\t\"binaryVersion\": 1,\n"
+                        + "\t\"size\": 100,\n"
+                        + "\t\"identifier\": \"test2_2011-01-01T00:00:00.000Z_2012-01-01T00:00:00.000Z_version2\"\n"
+                        + "}]";
+    byte[] bytesToWrite = json.getBytes(StandardCharsets.UTF_8);
+    in.add(bytesToWrite);
+    in.done();
+    future.set(in);
+
+    EasyMock.replay(client, request, responseHolder, responseHandler);
     DataContext dataContext = new DataContext()
     {
       @Override
@@ -477,7 +531,7 @@ public class SystemSchemaTest extends CalciteTestBase
 
     verifyRow(
         rows.get(3),
-        "test4_2014-01-01T00:00:00.000Z_2015-01-01T00:00:00.000Z_version4",
+        "test4_2017-01-01T00:00:00.000Z_2018-01-01T00:00:00.000Z_version4",
         100L,
         0L, //partition_num
         1L, //num_replicas
@@ -489,7 +543,7 @@ public class SystemSchemaTest extends CalciteTestBase
 
     verifyRow(
         rows.get(4),
-        "test5_2015-01-01T00:00:00.000Z_2016-01-01T00:00:00.000Z_version5",
+        "test5_2017-01-01T00:00:00.000Z_2018-01-01T00:00:00.000Z_version5",
         100L,
         0L, //partition_num
         1L, //num_replicas
@@ -502,8 +556,8 @@ public class SystemSchemaTest extends CalciteTestBase
     // wikipedia segments are published and unavailable, num_replicas is 0
     verifyRow(
         rows.get(5),
-        "wikipedia1_2007-01-01T00:00:00.000Z_2008-01-01T00:00:00.000Z_version1",
-        53000L,
+        "wikipedia1_2018-08-07T23:00:00.000Z_2018-08-08T00:00:00.000Z_2018-08-07T23:00:00.059Z",
+        47406L,
         0L, //partition_num
         0L, //num_replicas
         0L, //numRows
@@ -514,8 +568,8 @@ public class SystemSchemaTest extends CalciteTestBase
 
     verifyRow(
         rows.get(6),
-        "wikipedia2_2008-01-01T00:00:00.000Z_2009-01-01T00:00:00.000Z_version2",
-        83000L,
+        "wikipedia2_2018-08-07T18:00:00.000Z_2018-08-07T19:00:00.000Z_2018-08-07T18:00:00.117Z",
+        83846L,
         0L, //partition_num
         0L, //num_replicas
         0L, //numRows
@@ -526,8 +580,8 @@ public class SystemSchemaTest extends CalciteTestBase
 
     verifyRow(
         rows.get(7),
-        "wikipedia3_2009-01-01T00:00:00.000Z_2010-01-01T00:00:00.000Z_version3",
-        47000L,
+        "wikipedia3_2018-08-07T23:00:00.000Z_2018-08-08T00:00:00.000Z_2018-08-07T23:00:00.059Z",
+        53527L,
         0L, //partition_num
         0L, //num_replicas
         0L, //numRows
@@ -682,11 +736,11 @@ public class SystemSchemaTest extends CalciteTestBase
 
     Object[] row3 = rows.get(3);
     Assert.assertEquals("server2:1234", row3[0]);
-    Assert.assertEquals("test4_2014-01-01T00:00:00.000Z_2015-01-01T00:00:00.000Z_version4", row3[1].toString());
+    Assert.assertEquals("test4_2017-01-01T00:00:00.000Z_2018-01-01T00:00:00.000Z_version4", row3[1].toString());
 
     Object[] row4 = rows.get(4);
     Assert.assertEquals("server2:1234", row4[0]);
-    Assert.assertEquals("test5_2015-01-01T00:00:00.000Z_2016-01-01T00:00:00.000Z_version5", row4[1].toString());
+    Assert.assertEquals("test5_2017-01-01T00:00:00.000Z_2018-01-01T00:00:00.000Z_version5", row4[1].toString());
 
     // Verify value types.
     verifyTypes(rows, SystemSchema.SERVER_SEGMENTS_SIGNATURE);

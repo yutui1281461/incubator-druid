@@ -21,7 +21,6 @@ package org.apache.druid.query.aggregation;
 
 import org.apache.druid.common.config.NullHandling;
 import org.apache.druid.guice.annotations.PublicApi;
-import org.apache.druid.query.monomorphicprocessing.RuntimeShapeInspector;
 import org.apache.druid.segment.BaseNullableColumnValueSelector;
 
 import javax.annotation.Nullable;
@@ -40,13 +39,14 @@ import java.nio.ByteBuffer;
 @PublicApi
 public final class NullableBufferAggregator implements BufferAggregator
 {
-  private final BufferAggregator delegate;
-  private final BaseNullableColumnValueSelector nullSelector;
 
-  public NullableBufferAggregator(BufferAggregator delegate, BaseNullableColumnValueSelector nullSelector)
+  private final BufferAggregator delegate;
+  private final BaseNullableColumnValueSelector selector;
+
+  public NullableBufferAggregator(BufferAggregator delegate, BaseNullableColumnValueSelector selector)
   {
     this.delegate = delegate;
-    this.nullSelector = nullSelector;
+    this.selector = selector;
   }
 
   @Override
@@ -59,7 +59,7 @@ public final class NullableBufferAggregator implements BufferAggregator
   @Override
   public void aggregate(ByteBuffer buf, int position)
   {
-    boolean isNotNull = !nullSelector.isNull();
+    boolean isNotNull = !selector.isNull();
     if (isNotNull) {
       if (buf.get(position) == NullHandling.IS_NULL_BYTE) {
         buf.put(position, NullHandling.IS_NOT_NULL_BYTE);
@@ -115,12 +115,5 @@ public final class NullableBufferAggregator implements BufferAggregator
   public void close()
   {
     delegate.close();
-  }
-
-  @Override
-  public void inspectRuntimeShape(RuntimeShapeInspector inspector)
-  {
-    inspector.visit("delegate", delegate);
-    inspector.visit("nullSelector", nullSelector);
   }
 }

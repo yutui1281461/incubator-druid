@@ -48,7 +48,6 @@ import org.apache.druid.indexing.common.task.batch.parallel.ParallelIndexTaskRun
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.logger.Logger;
-import org.apache.druid.segment.indexing.TuningConfig;
 import org.apache.druid.segment.indexing.granularity.GranularitySpec;
 import org.apache.druid.segment.realtime.appenderator.SegmentIdWithShardSpec;
 import org.apache.druid.segment.realtime.firehose.ChatHandler;
@@ -77,8 +76,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.SortedSet;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -101,7 +98,7 @@ public class ParallelIndexSupervisorTask extends AbstractTask implements ChatHan
   private final AuthorizerMapper authorizerMapper;
   private final RowIngestionMetersFactory rowIngestionMetersFactory;
 
-  private final ConcurrentHashMap<Interval, AtomicInteger> partitionNumCountersPerInterval = new ConcurrentHashMap<>();
+  private final Counters counters = new Counters();
 
   private volatile ParallelIndexTaskRunner runner;
 
@@ -141,14 +138,13 @@ public class ParallelIndexSupervisorTask extends AbstractTask implements ChatHan
     this.authorizerMapper = authorizerMapper;
     this.rowIngestionMetersFactory = rowIngestionMetersFactory;
 
-    if (ingestionSchema.getTuningConfig().getMaxSavedParseExceptions()
-        != TuningConfig.DEFAULT_MAX_SAVED_PARSE_EXCEPTIONS) {
+    if (ingestionSchema.getTuningConfig().getMaxSavedParseExceptions() > 0) {
       log.warn("maxSavedParseExceptions is not supported yet");
     }
-    if (ingestionSchema.getTuningConfig().getMaxParseExceptions() != TuningConfig.DEFAULT_MAX_PARSE_EXCEPTIONS) {
+    if (ingestionSchema.getTuningConfig().getMaxParseExceptions() > 0) {
       log.warn("maxParseExceptions is not supported yet");
     }
-    if (ingestionSchema.getTuningConfig().isLogParseExceptions() != TuningConfig.DEFAULT_LOG_PARSE_EXCEPTIONS) {
+    if (ingestionSchema.getTuningConfig().isLogParseExceptions()) {
       log.warn("logParseExceptions is not supported yet");
     }
   }
@@ -381,7 +377,7 @@ public class ParallelIndexSupervisorTask extends AbstractTask implements ChatHan
       throw new ISE("Unspecified interval[%s] in granularitySpec[%s]", interval, granularitySpec);
     }
 
-    final int partitionNum = Counters.incrementAndGetInt(partitionNumCountersPerInterval, interval);
+    final int partitionNum = counters.increment(interval.toString(), 1);
     return new SegmentIdWithShardSpec(
         dataSource,
         interval,

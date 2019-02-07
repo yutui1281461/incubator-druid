@@ -407,7 +407,7 @@ public class GroupByTypeInterfaceBenchmark
         strategySelector,
         new GroupByQueryQueryToolChest(
             strategySelector,
-            QueryBenchmarkUtil.noopIntervalChunkingQueryRunnerDecorator()
+            QueryBenchmarkUtil.NoopIntervalChunkingQueryRunnerDecorator()
         )
     );
   }

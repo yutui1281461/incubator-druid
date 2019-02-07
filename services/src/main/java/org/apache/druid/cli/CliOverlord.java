@@ -114,7 +114,6 @@ import org.eclipse.jetty.servlet.DefaultServlet;
 import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
-import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.resource.ResourceCollection;
 
 import java.util.List;
@@ -131,7 +130,6 @@ public class CliOverlord extends ServerRunnable
 
   protected static List<String> UNSECURED_PATHS = ImmutableList.of(
       "/",
-      "/favicon.png",
       "/console.html",
       "/old-console/*",
       "/images/*",
@@ -355,14 +353,17 @@ public class CliOverlord extends ServerRunnable
       final ServletContextHandler root = new ServletContextHandler(ServletContextHandler.SESSIONS);
       root.setInitParameter("org.eclipse.jetty.servlet.Default.dirAllowed", "false");
       root.setInitParameter("org.eclipse.jetty.servlet.Default.redirectWelcome", "true");
-      root.setWelcomeFiles(new String[]{"console.html"});
+      root.setWelcomeFiles(new String[]{"index.html", "console.html"});
 
       ServletHolder holderPwd = new ServletHolder("default", DefaultServlet.class);
 
       root.addServlet(holderPwd, "/");
       root.setBaseResource(
           new ResourceCollection(
-              Resource.newClassPathResource("org/apache/druid/console")
+              new String[]{
+                  TaskMaster.class.getClassLoader().getResource("static").toExternalForm(),
+                  TaskMaster.class.getClassLoader().getResource("indexer_static").toExternalForm()
+              }
           )
       );
 

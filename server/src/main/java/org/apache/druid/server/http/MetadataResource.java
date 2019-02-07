@@ -57,7 +57,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -149,22 +148,14 @@ public class MetadataResource
   @GET
   @Path("/segments")
   @Produces(MediaType.APPLICATION_JSON)
-  public Response getDatabaseSegments(
-      @Context final HttpServletRequest req,
-      @QueryParam("datasources") final Set<String> datasources
-  )
+  public Response getDatabaseSegments(@Context final HttpServletRequest req)
   {
-    Collection<ImmutableDruidDataSource> druidDataSources = metadataSegmentManager.getDataSources();
-    if (datasources != null && !datasources.isEmpty()) {
-      druidDataSources = druidDataSources.stream()
-                                         .filter(src -> datasources.contains(src.getName()))
-                                         .collect(Collectors.toSet());
-    }
+    final Collection<ImmutableDruidDataSource> druidDataSources = metadataSegmentManager.getDataSources();
     final Stream<DataSegment> metadataSegments = druidDataSources
         .stream()
         .flatMap(t -> t.getSegments().stream());
 
-    final Function<DataSegment, Iterable<ResourceAction>> raGenerator = segment -> Collections.singletonList(
+    Function<DataSegment, Iterable<ResourceAction>> raGenerator = segment -> Collections.singletonList(
         AuthorizationUtils.DATASOURCE_READ_RA_GENERATOR.apply(segment.getDataSource()));
 
     final Iterable<DataSegment> authorizedSegments =

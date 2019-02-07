@@ -34,7 +34,6 @@ import org.apache.druid.query.lookup.namespace.ExtractionNamespace;
 import sun.misc.Cleaner;
 
 import javax.annotation.Nullable;
-import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
@@ -425,9 +424,7 @@ public final class CacheScheduler
       NamespaceExtractionCacheManager cacheManager
   )
   {
-    // Accesses to IdentityHashMap should be faster than to HashMap or ImmutableMap.
-    // Class doesn't override Object.equals().
-    this.namespaceGeneratorMap = new IdentityHashMap<>(namespaceGeneratorMap);
+    this.namespaceGeneratorMap = namespaceGeneratorMap;
     this.cacheManager = cacheManager;
     cacheManager.scheduledExecutorService().scheduleAtFixedRate(
         new Runnable()
@@ -509,7 +506,6 @@ public final class CacheScheduler
 
   public <T extends ExtractionNamespace> Entry schedule(final T namespace)
   {
-    @SuppressWarnings("unchecked")
     final CacheGenerator<T> generator = (CacheGenerator<T>) namespaceGeneratorMap.get(namespace.getClass());
     if (generator == null) {
       throw new ISE("Cannot find generator for namespace [%s]", namespace);

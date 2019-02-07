@@ -52,9 +52,10 @@ public class FixedBucketsHistogramAggregationTest
 
   public FixedBucketsHistogramAggregationTest(final GroupByQueryConfig config)
   {
-    ApproximateHistogramDruidModule.registerSerde();
+    ApproximateHistogramDruidModule module = new ApproximateHistogramDruidModule();
+    module.configure(null);
     helper = AggregationTestHelper.createGroupByQueryAggregationTestHelper(
-        Lists.newArrayList(new ApproximateHistogramDruidModule().getJacksonModules()),
+        Lists.newArrayList(module.getJacksonModules()),
         config,
         tempFolder
     );

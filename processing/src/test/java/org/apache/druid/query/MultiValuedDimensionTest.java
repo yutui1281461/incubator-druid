@@ -271,7 +271,7 @@ public class MultiValuedDimensionTest
           pool,
           new TopNQueryQueryToolChest(
               new TopNQueryConfig(),
-              QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+              QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
           ),
           QueryRunnerTestHelper.NOOP_QUERYWATCHER
       );

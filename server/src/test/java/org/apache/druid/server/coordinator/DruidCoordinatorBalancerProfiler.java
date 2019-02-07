@@ -27,6 +27,7 @@ import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.metadata.MetadataRuleManager;
+import org.apache.druid.server.coordinator.helper.DruidCoordinatorBalancer;
 import org.apache.druid.server.coordinator.helper.DruidCoordinatorRuleRunner;
 import org.apache.druid.server.coordinator.rules.PeriodLoadRule;
 import org.apache.druid.server.coordinator.rules.Rule;
@@ -138,7 +139,7 @@ public class DruidCoordinatorBalancerProfiler
                                             serverHolderList.stream().collect(
                                                 Collectors.toCollection(
                                                     () -> new TreeSet<>(
-                                                        DruidCoordinatorBalancerTester.percentUsedComparator
+                                                        DruidCoordinatorBalancer.percentUsedComparator
                                                     )
                                                 )
                                             )
@@ -169,7 +170,7 @@ public class DruidCoordinatorBalancerProfiler
                                                 serverHolderList.stream().collect(
                                                     Collectors.toCollection(
                                                         () -> new TreeSet<>(
-                                                            DruidCoordinatorBalancerTester.percentUsedComparator
+                                                            DruidCoordinatorBalancer.percentUsedComparator
                                                         )
                                                     )
                                                 )
@@ -231,7 +232,7 @@ public class DruidCoordinatorBalancerProfiler
                                             ).collect(
                                                 Collectors.toCollection(
                                                     () -> new TreeSet<>(
-                                                        DruidCoordinatorBalancerTester.percentUsedComparator
+                                                        DruidCoordinatorBalancer.percentUsedComparator
                                                     )
                                                 )
                                             )

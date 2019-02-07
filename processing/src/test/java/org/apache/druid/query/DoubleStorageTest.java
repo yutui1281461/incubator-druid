@@ -97,14 +97,14 @@ public class DoubleStorageTest
       new ScanQueryEngine()
   );
 
-  private Druids.ScanQueryBuilder newTestQuery()
+  private ScanQuery.ScanQueryBuilder newTestQuery()
   {
-    return Druids.newScanQueryBuilder()
-                 .dataSource(new TableDataSource(QueryRunnerTestHelper.dataSource))
-                 .columns(Collections.emptyList())
-                 .intervals(QueryRunnerTestHelper.fullOnIntervalSpec)
-                 .limit(Integer.MAX_VALUE)
-                 .legacy(false);
+    return ScanQuery.newScanQueryBuilder()
+                    .dataSource(new TableDataSource(QueryRunnerTestHelper.dataSource))
+                    .columns(Collections.emptyList())
+                    .intervals(QueryRunnerTestHelper.fullOnIntervalSpec)
+                    .limit(Integer.MAX_VALUE)
+                    .legacy(false);
   }
 
 

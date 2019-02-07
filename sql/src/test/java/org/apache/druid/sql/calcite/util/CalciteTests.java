@@ -31,7 +31,6 @@ import com.google.inject.Injector;
 import com.google.inject.Key;
 import com.google.inject.Module;
 import org.apache.curator.x.discovery.ServiceProvider;
-import org.apache.druid.client.BrokerSegmentWatcherConfig;
 import org.apache.druid.collections.CloseableStupidPool;
 import org.apache.druid.curator.discovery.ServerDiscoverySelector;
 import org.apache.druid.data.input.InputRow;
@@ -105,7 +104,6 @@ import org.apache.druid.segment.TestHelper;
 import org.apache.druid.segment.incremental.IncrementalIndexSchema;
 import org.apache.druid.segment.writeout.OffHeapMemorySegmentWriteOutMediumFactory;
 import org.apache.druid.server.QueryLifecycleFactory;
-import org.apache.druid.server.coordinator.BytesAccumulatingResponseHandler;
 import org.apache.druid.server.log.NoopRequestLogger;
 import org.apache.druid.server.security.Access;
 import org.apache.druid.server.security.AllowAllAuthenticator;
@@ -125,7 +123,6 @@ import org.apache.druid.sql.calcite.planner.DruidOperatorTable;
 import org.apache.druid.sql.calcite.planner.PlannerConfig;
 import org.apache.druid.sql.calcite.planner.PlannerFactory;
 import org.apache.druid.sql.calcite.schema.DruidSchema;
-import org.apache.druid.sql.calcite.schema.MetadataSegmentView;
 import org.apache.druid.sql.calcite.schema.SystemSchema;
 import org.apache.druid.sql.calcite.view.NoopViewManager;
 import org.apache.druid.sql.calcite.view.ViewManager;
@@ -517,7 +514,7 @@ public class CalciteTests
                 new SelectQueryRunnerFactory(
                     new SelectQueryQueryToolChest(
                         TestHelper.makeJsonMapper(),
-                        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator(),
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator(),
                         SELECT_CONFIG_SUPPLIER
                     ),
                     new SelectQueryEngine(),
@@ -527,7 +524,9 @@ public class CalciteTests
             .put(
                 TimeseriesQuery.class,
                 new TimeseriesQueryRunnerFactory(
-                    new TimeseriesQueryQueryToolChest(QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()),
+                    new TimeseriesQueryQueryToolChest(
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
+                    ),
                     new TimeseriesQueryEngine(),
                     QueryRunnerTestHelper.NOOP_QUERYWATCHER
                 )
@@ -538,7 +537,7 @@ public class CalciteTests
                     stupidPool,
                     new TopNQueryQueryToolChest(
                         new TopNQueryConfig(),
-                        QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
+                        QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()
                     ),
                     QueryRunnerTestHelper.NOOP_QUERYWATCHER
                 )
@@ -740,8 +739,7 @@ public class CalciteTests
 
   public static SystemSchema createMockSystemSchema(
       final DruidSchema druidSchema,
-      final SpecificSegmentsQuerySegmentWalker walker,
-      final PlannerConfig plannerConfig
+      final SpecificSegmentsQuerySegmentWalker walker
   )
   {
     final DruidLeaderClient druidLeaderClient = new DruidLeaderClient(
@@ -755,13 +753,6 @@ public class CalciteTests
     };
     final SystemSchema schema = new SystemSchema(
         druidSchema,
-        new MetadataSegmentView(
-            druidLeaderClient,
-            getJsonMapper(),
-            new BytesAccumulatingResponseHandler(),
-            new BrokerSegmentWatcherConfig(),
-            plannerConfig
-        ),
         new TestServerInventoryView(walker.getSegments()),
         TEST_AUTHORIZER_MAPPER,
         druidLeaderClient,

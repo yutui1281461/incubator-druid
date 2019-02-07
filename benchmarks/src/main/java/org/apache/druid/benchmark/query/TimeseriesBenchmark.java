@@ -296,7 +296,7 @@ public class TimeseriesBenchmark
 
     factory = new TimeseriesQueryRunnerFactory(
         new TimeseriesQueryQueryToolChest(
-            QueryBenchmarkUtil.noopIntervalChunkingQueryRunnerDecorator()
+            QueryBenchmarkUtil.NoopIntervalChunkingQueryRunnerDecorator()
         ),
         new TimeseriesQueryEngine(),
         QueryBenchmarkUtil.NOOP_QUERYWATCHER

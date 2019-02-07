@@ -145,7 +145,9 @@ public class ApproximateHistogramGroupByQueryTest
   {
     this.factory = factory;
     this.runner = runner;
-    ApproximateHistogramDruidModule.registerSerde();
+
+    //Note: this is needed in order to properly register the serde for Histogram.
+    new ApproximateHistogramDruidModule().configure(null);
   }
 
   @After

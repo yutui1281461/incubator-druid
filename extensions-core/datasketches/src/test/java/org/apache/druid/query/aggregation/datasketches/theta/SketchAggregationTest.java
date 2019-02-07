@@ -71,9 +71,10 @@ public class SketchAggregationTest
 
   public SketchAggregationTest(final GroupByQueryConfig config)
   {
-    SketchModule.registerSerde();
+    SketchModule sm = new SketchModule();
+    sm.configure(null);
     helper = AggregationTestHelper.createGroupByQueryAggregationTestHelper(
-        new SketchModule().getJacksonModules(),
+        sm.getJacksonModules(),
         config,
         tempFolder
     );

@@ -45,6 +45,7 @@ import org.apache.druid.discovery.DruidNodeAnnouncer;
 import org.apache.druid.discovery.LookupNodeService;
 import org.apache.druid.indexer.TaskState;
 import org.apache.druid.indexer.TaskStatus;
+import org.apache.druid.indexing.common.Counters;
 import org.apache.druid.indexing.common.SegmentLoaderFactory;
 import org.apache.druid.indexing.common.TaskLock;
 import org.apache.druid.indexing.common.TaskToolbox;
@@ -537,7 +538,8 @@ public class TaskLifecycleTest
             taskStorage,
             mdc,
             emitter,
-            EasyMock.createMock(SupervisorManager.class)
+            EasyMock.createMock(SupervisorManager.class),
+            new Counters()
         ),
         new TaskAuditLogConfig(true)
     );
