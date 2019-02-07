@@ -46,6 +46,7 @@ import org.apache.druid.timeline.DataSegment;
 import org.jboss.netty.handler.codec.http.HttpMethod;
 import org.joda.time.DateTime;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Iterator;
@@ -54,6 +55,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * This class polls the coordinator in background to keep the latest published segments.
@@ -71,10 +73,12 @@ public class MetadataSegmentView
   private final BrokerSegmentWatcherConfig segmentWatcherConfig;
 
   private final boolean isCacheEnabled;
+  @Nullable
   private final ConcurrentMap<DataSegment, DateTime> publishedSegments;
   private final ScheduledExecutorService scheduledExec;
-  private final long pollPeriodinMS;
-  private LifecycleLock lifecycleLock = new LifecycleLock();
+  private final long pollPeriodInMS;
+  private final LifecycleLock lifecycleLock = new LifecycleLock();
+  private final AtomicBoolean cachePopulated = new AtomicBoolean(false);
 
   @Inject
   public MetadataSegmentView(
@@ -91,7 +95,7 @@ public class MetadataSegmentView
     this.responseHandler = responseHandler;
     this.segmentWatcherConfig = segmentWatcherConfig;
     this.isCacheEnabled = plannerConfig.isMetadataSegmentCacheEnable();
-    this.pollPeriodinMS = plannerConfig.getMetadataSegmentPollPeriod();
+    this.pollPeriodInMS = plannerConfig.getMetadataSegmentPollPeriod();
     this.publishedSegments = isCacheEnabled ? new ConcurrentHashMap<>(1000) : null;
     this.scheduledExec = Execs.scheduledSingleThreaded("MetadataSegmentView-Cache--%d");
   }
@@ -99,36 +103,32 @@ public class MetadataSegmentView
   @LifecycleStart
   public void start()
   {
-    synchronized (lifecycleLock) {
-      if (!lifecycleLock.canStart()) {
-        throw new ISE("can't start.");
+    if (!lifecycleLock.canStart()) {
+      throw new ISE("can't start.");
+    }
+    try {
+      if (isCacheEnabled) {
+        scheduledExec.schedule(new PollTask(), pollPeriodInMS, TimeUnit.MILLISECONDS);
       }
-      try {
-        if (isCacheEnabled) {
-          scheduledExec.schedule(new PollTask(), 0, TimeUnit.MILLISECONDS);
-          lifecycleLock.started();
-          log.info("MetadataSegmentView Started.");
-        }
-      }
-      finally {
-        lifecycleLock.exitStart();
-      }
+      lifecycleLock.started();
+      log.info("MetadataSegmentView Started.");
+    }
+    finally {
+      lifecycleLock.exitStart();
     }
   }
 
   @LifecycleStop
   public void stop()
   {
-    synchronized (lifecycleLock) {
-      if (!lifecycleLock.canStop()) {
-        throw new ISE("can't stop.");
-      }
-      if (isCacheEnabled) {
-        log.info("MetadataSegmentView is stopping.");
-        scheduledExec.shutdown();
-        log.info("MetadataSegmentView Stopped.");
-      }
+    if (!lifecycleLock.canStop()) {
+      throw new ISE("can't stop.");
     }
+    log.info("MetadataSegmentView is stopping.");
+    if (isCacheEnabled) {
+      scheduledExec.shutdown();
+    }
+    log.info("MetadataSegmentView Stopped.");
   }
 
   private void poll()
@@ -157,12 +157,16 @@ public class MetadataSegmentView
     // This means publishedSegments will be eventually consistent with
     // the segments in coordinator
     publishedSegments.entrySet().removeIf(e -> e.getValue() != timestamp);
-
+    cachePopulated.set(true);
   }
 
   public Iterator<DataSegment> getPublishedSegments()
   {
     if (isCacheEnabled) {
+      Preconditions.checkState(
+          lifecycleLock.awaitStarted(1, TimeUnit.MILLISECONDS) && cachePopulated.get(),
+          "hold on, still syncing published segments"
+      );
       return publishedSegments.keySet().iterator();
     } else {
       return getMetadataSegments(
@@ -175,7 +179,7 @@ public class MetadataSegmentView
   }
 
   // Note that coordinator must be up to get segments
-  private static JsonParserIterator<DataSegment> getMetadataSegments(
+  private JsonParserIterator<DataSegment> getMetadataSegments(
       DruidLeaderClient coordinatorClient,
       ObjectMapper jsonMapper,
       BytesAccumulatingResponseHandler responseHandler,
@@ -228,19 +232,22 @@ public class MetadataSegmentView
     @Override
     public void run()
     {
+      long delayMS = pollPeriodInMS;
       try {
         final long pollStartTime = System.nanoTime();
         poll();
         final long pollEndTime = System.nanoTime();
         final long pollTimeNS = pollEndTime - pollStartTime;
         final long pollTimeMS = TimeUnit.NANOSECONDS.toMillis(pollTimeNS);
-        final long delayMS = Math.max(pollPeriodinMS - pollTimeMS, 0);
-        if (!Thread.currentThread().isInterrupted()) {
-          scheduledExec.schedule(new PollTask(), delayMS, TimeUnit.MILLISECONDS);
-        }
+        delayMS = Math.max(pollPeriodInMS - pollTimeMS, 0);
       }
       catch (Exception e) {
         log.makeAlert(e, "Problem polling Coordinator.").emit();
+      }
+      finally {
+        if (!Thread.currentThread().isInterrupted()) {
+          scheduledExec.schedule(new PollTask(), delayMS, TimeUnit.MILLISECONDS);
+        }
       }
     }
   }

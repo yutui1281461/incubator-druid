@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.druid.query.aggregation.histogram.sql;
+package org.apache.druid.query.aggregation.datasketches.quantiles.sql;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.calcite.rel.core.AggregateCall;
@@ -34,12 +34,10 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.query.aggregation.AggregatorFactory;
-import org.apache.druid.query.aggregation.histogram.ApproximateHistogram;
-import org.apache.druid.query.aggregation.histogram.ApproximateHistogramAggregatorFactory;
-import org.apache.druid.query.aggregation.histogram.ApproximateHistogramFoldingAggregatorFactory;
-import org.apache.druid.query.aggregation.histogram.QuantilePostAggregator;
+import org.apache.druid.query.aggregation.datasketches.quantiles.DoublesSketchAggregatorFactory;
+import org.apache.druid.query.aggregation.datasketches.quantiles.DoublesSketchToQuantilePostAggregator;
+import org.apache.druid.query.aggregation.post.FieldAccessPostAggregator;
 import org.apache.druid.segment.VirtualColumn;
-import org.apache.druid.segment.column.ValueType;
 import org.apache.druid.segment.virtual.ExpressionVirtualColumn;
 import org.apache.druid.sql.calcite.aggregation.Aggregation;
 import org.apache.druid.sql.calcite.aggregation.SqlAggregator;
@@ -53,10 +51,10 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class QuantileSqlAggregator implements SqlAggregator
+public class DoublesSketchSqlAggregator implements SqlAggregator
 {
-  private static final SqlAggFunction FUNCTION_INSTANCE = new QuantileSqlAggFunction();
-  private static final String NAME = "APPROX_QUANTILE";
+  private static final SqlAggFunction FUNCTION_INSTANCE = new DoublesSketchSqlAggFunction();
+  private static final String NAME = "APPROX_QUANTILE_DS";
 
   @Override
   public SqlAggFunction calciteFunction()
@@ -68,7 +66,7 @@ public class QuantileSqlAggregator implements SqlAggregator
   @Override
   public Aggregation toDruidAggregation(
       final PlannerContext plannerContext,
-      DruidQuerySignature querySignature,
+      final DruidQuerySignature querySignature,
       final RexBuilder rexBuilder,
       final String name,
       final AggregateCall aggregateCall,
@@ -105,7 +103,7 @@ public class QuantileSqlAggregator implements SqlAggregator
     }
 
     final float probability = ((Number) RexLiteral.value(probabilityArg)).floatValue();
-    final int resolution;
+    final int k;
 
     if (aggregateCall.getArgList().size() >= 3) {
       final RexNode resolutionArg = Expressions.fromFieldAccess(
@@ -119,20 +117,16 @@ public class QuantileSqlAggregator implements SqlAggregator
         return null;
       }
 
-      resolution = ((Number) RexLiteral.value(resolutionArg)).intValue();
+      k = ((Number) RexLiteral.value(resolutionArg)).intValue();
     } else {
-      resolution = ApproximateHistogram.DEFAULT_HISTOGRAM_SIZE;
+      k = DoublesSketchAggregatorFactory.DEFAULT_K;
     }
-
-    final int numBuckets = ApproximateHistogram.DEFAULT_BUCKET_SIZE;
-    final float lowerLimit = Float.NEGATIVE_INFINITY;
-    final float upperLimit = Float.POSITIVE_INFINITY;
 
     // Look for existing matching aggregatorFactory.
     for (final Aggregation existing : existingAggregations) {
       for (AggregatorFactory factory : existing.getAggregatorFactories()) {
-        if (factory instanceof ApproximateHistogramAggregatorFactory) {
-          final ApproximateHistogramAggregatorFactory theFactory = (ApproximateHistogramAggregatorFactory) factory;
+        if (factory instanceof DoublesSketchAggregatorFactory) {
+          final DoublesSketchAggregatorFactory theFactory = (DoublesSketchAggregatorFactory) factory;
 
           // Check input for equivalence.
           final boolean inputMatches;
@@ -155,16 +149,20 @@ public class QuantileSqlAggregator implements SqlAggregator
           }
 
           final boolean matches = inputMatches
-                                  && theFactory.getResolution() == resolution
-                                  && theFactory.getNumBuckets() == numBuckets
-                                  && theFactory.getLowerLimit() == lowerLimit
-                                  && theFactory.getUpperLimit() == upperLimit;
+                                  && theFactory.getK() == k;
 
           if (matches) {
             // Found existing one. Use this.
             return Aggregation.create(
                 ImmutableList.of(),
-                new QuantilePostAggregator(name, factory.getName(), probability)
+                new DoublesSketchToQuantilePostAggregator(
+                    name,
+                    new FieldAccessPostAggregator(
+                        factory.getName(),
+                        factory.getName()
+                    ),
+                    probability
+                )
             );
           }
         }
@@ -175,52 +173,45 @@ public class QuantileSqlAggregator implements SqlAggregator
     final List<VirtualColumn> virtualColumns = new ArrayList<>();
 
     if (input.isDirectColumnAccess()) {
-      if (rowSignature.getColumnType(input.getDirectColumn()) == ValueType.COMPLEX) {
-        aggregatorFactory = new ApproximateHistogramFoldingAggregatorFactory(
-            histogramName,
-            input.getDirectColumn(),
-            resolution,
-            numBuckets,
-            lowerLimit,
-            upperLimit
-        );
-      } else {
-        aggregatorFactory = new ApproximateHistogramAggregatorFactory(
-            histogramName,
-            input.getDirectColumn(),
-            resolution,
-            numBuckets,
-            lowerLimit,
-            upperLimit
-        );
-      }
+      aggregatorFactory = new DoublesSketchAggregatorFactory(
+          histogramName,
+          input.getDirectColumn(),
+          k
+      );
     } else {
-      final VirtualColumn virtualColumn =
-          querySignature.getOrCreateVirtualColumnForExpression(plannerContext, input, SqlTypeName.FLOAT);
+      VirtualColumn virtualColumn = querySignature.getOrCreateVirtualColumnForExpression(
+          plannerContext,
+          input,
+          SqlTypeName.FLOAT
+      );
       virtualColumns.add(virtualColumn);
-      aggregatorFactory = new ApproximateHistogramAggregatorFactory(
+      aggregatorFactory = new DoublesSketchAggregatorFactory(
           histogramName,
           virtualColumn.getOutputName(),
-          resolution,
-          numBuckets,
-          lowerLimit,
-          upperLimit
+          k
       );
     }
 
     return Aggregation.create(
         virtualColumns,
         ImmutableList.of(aggregatorFactory),
-        new QuantilePostAggregator(name, histogramName, probability)
+        new DoublesSketchToQuantilePostAggregator(
+            name,
+            new FieldAccessPostAggregator(
+                histogramName,
+                histogramName
+            ),
+            probability
+        )
     );
   }
 
-  private static class QuantileSqlAggFunction extends SqlAggFunction
+  private static class DoublesSketchSqlAggFunction extends SqlAggFunction
   {
     private static final String SIGNATURE1 = "'" + NAME + "(column, probability)'\n";
-    private static final String SIGNATURE2 = "'" + NAME + "(column, probability, resolution)'\n";
+    private static final String SIGNATURE2 = "'" + NAME + "(column, probability, k)'\n";
 
-    QuantileSqlAggFunction()
+    DoublesSketchSqlAggFunction()
     {
       super(
           NAME,
