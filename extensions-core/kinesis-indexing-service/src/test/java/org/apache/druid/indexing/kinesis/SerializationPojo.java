@@ -17,35 +17,21 @@
  * under the License.
  */
 
-package org.apache.druid.firehose.kafka;
 
-import com.fasterxml.jackson.databind.Module;
-import com.fasterxml.jackson.databind.jsontype.NamedType;
-import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.google.common.collect.ImmutableList;
-import com.google.inject.Binder;
-import org.apache.druid.initialization.DruidModule;
+package org.apache.druid.indexing.kinesis;
 
-import java.util.List;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- */
-public class KafkaEightDruidModule implements DruidModule
-{
-  @Override
-  public List<? extends Module> getJacksonModules()
-  {
-    return ImmutableList.of(
-        new SimpleModule("KafkaEightFirehoseModule")
-            .registerSubtypes(
-                new NamedType(KafkaEightFirehoseFactory.class, "kafka-0.8")
-            )
-    );
-  }
+public class SerializationPojo {
+  @JsonProperty
+  public String timestamp;
 
-  @Override
-  public void configure(Binder binder)
-  {
+  @JsonProperty
+  public String myString;
 
-  }
+  @JsonProperty
+  public int myInt;
+
+  @JsonProperty
+  public double myDouble;
 }

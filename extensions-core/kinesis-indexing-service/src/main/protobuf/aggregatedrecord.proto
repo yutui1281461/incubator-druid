@@ -17,35 +17,27 @@
  * under the License.
  */
 
-package org.apache.druid.firehose.kafka;
+syntax = "proto2";
 
-import com.fasterxml.jackson.databind.Module;
-import com.fasterxml.jackson.databind.jsontype.NamedType;
-import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.google.common.collect.ImmutableList;
-import com.google.inject.Binder;
-import org.apache.druid.initialization.DruidModule;
+package kinesisindexingservice;
 
-import java.util.List;
+option java_package = "org.apache.druid.indexing.kinesis.protobuf";
+option java_outer_classname = "AggregatedRecordProtos";
 
-/**
- */
-public class KafkaEightDruidModule implements DruidModule
-{
-  @Override
-  public List<? extends Module> getJacksonModules()
-  {
-    return ImmutableList.of(
-        new SimpleModule("KafkaEightFirehoseModule")
-            .registerSubtypes(
-                new NamedType(KafkaEightFirehoseFactory.class, "kafka-0.8")
-            )
-    );
-  }
+message AggregatedRecord {
+  repeated string partition_key_table     = 1;
+  repeated string explicit_hash_key_table = 2;
+  repeated Record records                 = 3;
+}
 
-  @Override
-  public void configure(Binder binder)
-  {
+message Tag {
+  required string key   = 1;
+  optional string value = 2;
+}
 
-  }
+message Record {
+  required uint64 partition_key_index     = 1;
+  optional uint64 explicit_hash_key_index = 2;
+  required bytes  data                    = 3;
+  repeated Tag    tags                    = 4;
 }

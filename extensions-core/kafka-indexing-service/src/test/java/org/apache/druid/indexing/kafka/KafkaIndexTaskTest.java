@@ -99,16 +99,14 @@ import org.apache.druid.metadata.DerbyMetadataStorageActionHandlerFactory;
 import org.apache.druid.metadata.EntryExistsException;
 import org.apache.druid.metadata.IndexerSQLMetadataStorageCoordinator;
 import org.apache.druid.metadata.TestDerbyConnector;
-import org.apache.druid.query.DefaultGenericQueryMetricsFactory;
 import org.apache.druid.query.DefaultQueryRunnerFactoryConglomerate;
 import org.apache.druid.query.Druids;
 import org.apache.druid.query.IntervalChunkingQueryRunnerDecorator;
 import org.apache.druid.query.Query;
+import org.apache.druid.query.QueryPlus;
 import org.apache.druid.query.QueryRunner;
-import org.apache.druid.query.QueryRunnerFactory;
 import org.apache.druid.query.QueryRunnerFactoryConglomerate;
 import org.apache.druid.query.QueryToolChest;
-import org.apache.druid.query.QueryWatcher;
 import org.apache.druid.query.Result;
 import org.apache.druid.query.SegmentDescriptor;
 import org.apache.druid.query.aggregation.AggregatorFactory;
@@ -116,13 +114,6 @@ import org.apache.druid.query.aggregation.CountAggregatorFactory;
 import org.apache.druid.query.aggregation.DoubleSumAggregatorFactory;
 import org.apache.druid.query.aggregation.LongSumAggregatorFactory;
 import org.apache.druid.query.filter.SelectorDimFilter;
-import org.apache.druid.query.scan.ScanQuery;
-import org.apache.druid.query.scan.ScanQueryConfig;
-import org.apache.druid.query.scan.ScanQueryEngine;
-import org.apache.druid.query.scan.ScanQueryQueryToolChest;
-import org.apache.druid.query.scan.ScanQueryRunnerFactory;
-import org.apache.druid.query.scan.ScanResultValue;
-import org.apache.druid.query.spec.QuerySegmentSpec;
 import org.apache.druid.query.timeseries.TimeseriesQuery;
 import org.apache.druid.query.timeseries.TimeseriesQueryEngine;
 import org.apache.druid.query.timeseries.TimeseriesQueryQueryToolChest;
@@ -181,13 +172,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import static org.apache.druid.query.QueryPlus.wrap;
 
 @RunWith(Parameterized.class)
 public class KafkaIndexTaskTest
@@ -384,7 +372,11 @@ public class KafkaIndexTaskTest
   public void testRunAfterDataInserted() throws Exception
   {
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final KafkaIndexTask task = createTask(
         null,
@@ -397,7 +389,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -439,7 +432,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -451,7 +445,11 @@ public class KafkaIndexTaskTest
     }
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     // Wait for task to exit
     Assert.assertEquals(TaskState.SUCCESS, future.get().getStatusCode());
@@ -486,7 +484,11 @@ public class KafkaIndexTaskTest
     maxRowsPerSegment = 2;
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
     Map<String, Object> consumerProps = kafkaServer.consumerProperties();
     consumerProps.put("max.poll.records", "1");
 
@@ -539,7 +541,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
     final ListenableFuture<TaskStatus> future = runTask(task);
@@ -611,148 +614,141 @@ public class KafkaIndexTaskTest
     int numToAdd = records.size() - 2;
 
     try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
       for (int i = 0; i < numToAdd; i++) {
         kafkaProducer.send(records.get(i)).get();
       }
-      kafkaProducer.commitTransaction();
-    }
 
-    Map<String, Object> consumerProps = kafkaServer.consumerProperties();
-    consumerProps.put("max.poll.records", "1");
+      Map<String, Object> consumerProps = kafkaServer.consumerProperties();
+      consumerProps.put("max.poll.records", "1");
 
-    final SeekableStreamPartitions<Integer, Long> startPartitions = new SeekableStreamPartitions<>(
-        topic,
-        ImmutableMap.of(
-            0,
-            0L,
-            1,
-            0L
-        )
-    );
-    final SeekableStreamPartitions<Integer, Long> checkpoint1 = new SeekableStreamPartitions<>(
-        topic,
-        ImmutableMap.of(
-            0,
-            3L,
-            1,
-            0L
-        )
-    );
-    final SeekableStreamPartitions<Integer, Long> checkpoint2 = new SeekableStreamPartitions<>(
-        topic,
-        ImmutableMap.of(
-            0,
-            10L,
-            1,
-            0L
-        )
-    );
+      final SeekableStreamPartitions<Integer, Long> startPartitions = new SeekableStreamPartitions<>(
+          topic,
+          ImmutableMap.of(
+              0,
+              0L,
+              1,
+              0L
+          )
+      );
+      final SeekableStreamPartitions<Integer, Long> checkpoint1 = new SeekableStreamPartitions<>(
+          topic,
+          ImmutableMap.of(
+              0,
+              3L,
+              1,
+              0L
+          )
+      );
+      final SeekableStreamPartitions<Integer, Long> checkpoint2 = new SeekableStreamPartitions<>(
+          topic,
+          ImmutableMap.of(
+              0,
+              10L,
+              1,
+              0L
+          )
+      );
 
-    final SeekableStreamPartitions<Integer, Long> endPartitions = new SeekableStreamPartitions<>(
-        topic,
-        ImmutableMap.of(
-            0,
-            10L,
-            1,
-            2L
-        )
-    );
-    final KafkaIndexTask task = createTask(
-        null,
-        new KafkaIndexTaskIOConfig(
-            0,
-            baseSequenceName,
-            startPartitions,
-            endPartitions,
-            consumerProps,
-            KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
-            true,
-            null,
-            null
-        )
-    );
-    final ListenableFuture<TaskStatus> future = runTask(task);
-    while (task.getRunner().getStatus() != Status.PAUSED) {
-      Thread.sleep(10);
-    }
-    final Map<Integer, Long> currentOffsets = ImmutableMap.copyOf(task.getRunner().getCurrentOffsets());
+      final SeekableStreamPartitions<Integer, Long> endPartitions = new SeekableStreamPartitions<>(
+          topic,
+          ImmutableMap.of(
+              0,
+              10L,
+              1,
+              2L
+          )
+      );
+      final KafkaIndexTask task = createTask(
+          null,
+          new KafkaIndexTaskIOConfig(
+              0,
+              baseSequenceName,
+              startPartitions,
+              endPartitions,
+              consumerProps,
+              KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
+              true,
+              null,
+              null,
+              false
+          )
+      );
+      final ListenableFuture<TaskStatus> future = runTask(task);
+      while (task.getRunner().getStatus() != Status.PAUSED) {
+        Thread.sleep(10);
+      }
+      final Map<Integer, Long> currentOffsets = ImmutableMap.copyOf(task.getRunner().getCurrentOffsets());
 
-    Assert.assertTrue(checkpoint1.getPartitionSequenceNumberMap().equals(currentOffsets));
-    task.getRunner().setEndOffsets(currentOffsets, false);
+      Assert.assertTrue(checkpoint1.getPartitionSequenceNumberMap().equals(currentOffsets));
+      task.getRunner().setEndOffsets(currentOffsets, false);
 
-    while (task.getRunner().getStatus() != Status.PAUSED) {
-      Thread.sleep(10);
-    }
+      while (task.getRunner().getStatus() != Status.PAUSED) {
+        Thread.sleep(10);
+      }
 
-    // add remaining records
-    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
+      // add remaining records
       for (int i = numToAdd; i < records.size(); i++) {
         kafkaProducer.send(records.get(i)).get();
       }
-      kafkaProducer.commitTransaction();
+      final Map<Integer, Long> nextOffsets = ImmutableMap.copyOf(task.getRunner().getCurrentOffsets());
+
+      Assert.assertTrue(checkpoint2.getPartitionSequenceNumberMap().equals(nextOffsets));
+      task.getRunner().setEndOffsets(nextOffsets, false);
+
+      Assert.assertEquals(TaskState.SUCCESS, future.get().getStatusCode());
+
+      Assert.assertEquals(2, checkpointRequestsHash.size());
+      Assert.assertTrue(
+          checkpointRequestsHash.contains(
+              Objects.hash(
+                  DATA_SCHEMA.getDataSource(),
+                  0,
+                  new KafkaDataSourceMetadata(startPartitions),
+                  new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, currentOffsets))
+              )
+          )
+      );
+      Assert.assertTrue(
+          checkpointRequestsHash.contains(
+              Objects.hash(
+                  DATA_SCHEMA.getDataSource(),
+                  0,
+                  new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, currentOffsets)),
+                  new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, nextOffsets))
+              )
+          )
+      );
+
+      // Check metrics
+      Assert.assertEquals(8, task.getRunner().getRowIngestionMeters().getProcessed());
+      Assert.assertEquals(3, task.getRunner().getRowIngestionMeters().getUnparseable());
+      Assert.assertEquals(1, task.getRunner().getRowIngestionMeters().getThrownAway());
+
+      // Check published metadata
+      SegmentDescriptor desc1 = SD(task, "2008/P1D", 0);
+      SegmentDescriptor desc2 = SD(task, "2009/P1D", 0);
+      SegmentDescriptor desc3 = SD(task, "2010/P1D", 0);
+      SegmentDescriptor desc4 = SD(task, "2011/P1D", 0);
+      SegmentDescriptor desc5 = SD(task, "2011/P1D", 1);
+      SegmentDescriptor desc6 = SD(task, "2012/P1D", 0);
+      SegmentDescriptor desc7 = SD(task, "2013/P1D", 0);
+      Assert.assertEquals(ImmutableSet.of(desc1, desc2, desc3, desc4, desc5, desc6, desc7), publishedDescriptors());
+      Assert.assertEquals(
+          new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 10L, 1, 2L))),
+          metadataStorageCoordinator.getDataSourceMetadata(DATA_SCHEMA.getDataSource())
+      );
+
+      // Check segments in deep storage
+      Assert.assertEquals(ImmutableList.of("a"), readSegmentColumn("dim1", desc1));
+      Assert.assertEquals(ImmutableList.of("b"), readSegmentColumn("dim1", desc2));
+      Assert.assertEquals(ImmutableList.of("c"), readSegmentColumn("dim1", desc3));
+      Assert.assertTrue((ImmutableList.of("d", "e").equals(readSegmentColumn("dim1", desc4))
+                         && ImmutableList.of("h").equals(readSegmentColumn("dim1", desc5))) ||
+                        (ImmutableList.of("d", "h").equals(readSegmentColumn("dim1", desc4))
+                         && ImmutableList.of("e").equals(readSegmentColumn("dim1", desc5))));
+      Assert.assertEquals(ImmutableList.of("g"), readSegmentColumn("dim1", desc6));
+      Assert.assertEquals(ImmutableList.of("f"), readSegmentColumn("dim1", desc7));
     }
-    final Map<Integer, Long> nextOffsets = ImmutableMap.copyOf(task.getRunner().getCurrentOffsets());
-
-    Assert.assertTrue(checkpoint2.getPartitionSequenceNumberMap().equals(nextOffsets));
-    task.getRunner().setEndOffsets(nextOffsets, false);
-
-    Assert.assertEquals(TaskState.SUCCESS, future.get().getStatusCode());
-
-    Assert.assertEquals(2, checkpointRequestsHash.size());
-    Assert.assertTrue(
-        checkpointRequestsHash.contains(
-            Objects.hash(
-                DATA_SCHEMA.getDataSource(),
-                0,
-                new KafkaDataSourceMetadata(startPartitions),
-                new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, currentOffsets))
-            )
-        )
-    );
-    Assert.assertTrue(
-        checkpointRequestsHash.contains(
-            Objects.hash(
-                DATA_SCHEMA.getDataSource(),
-                0,
-                new KafkaDataSourceMetadata(new SeekableStreamPartitions(topic, currentOffsets)),
-                new KafkaDataSourceMetadata(new SeekableStreamPartitions(topic, nextOffsets))
-            )
-        )
-    );
-
-    // Check metrics
-    Assert.assertEquals(8, task.getRunner().getRowIngestionMeters().getProcessed());
-    Assert.assertEquals(3, task.getRunner().getRowIngestionMeters().getUnparseable());
-    Assert.assertEquals(1, task.getRunner().getRowIngestionMeters().getThrownAway());
-
-    // Check published metadata
-    SegmentDescriptor desc1 = SD(task, "2008/P1D", 0);
-    SegmentDescriptor desc2 = SD(task, "2009/P1D", 0);
-    SegmentDescriptor desc3 = SD(task, "2010/P1D", 0);
-    SegmentDescriptor desc4 = SD(task, "2011/P1D", 0);
-    SegmentDescriptor desc5 = SD(task, "2011/P1D", 1);
-    SegmentDescriptor desc6 = SD(task, "2012/P1D", 0);
-    SegmentDescriptor desc7 = SD(task, "2013/P1D", 0);
-    Assert.assertEquals(ImmutableSet.of(desc1, desc2, desc3, desc4, desc5, desc6, desc7), publishedDescriptors());
-    Assert.assertEquals(
-        new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 10L, 1, 2L))),
-        metadataStorageCoordinator.getDataSourceMetadata(DATA_SCHEMA.getDataSource())
-    );
-
-    // Check segments in deep storage
-    Assert.assertEquals(ImmutableList.of("a"), readSegmentColumn("dim1", desc1));
-    Assert.assertEquals(ImmutableList.of("b"), readSegmentColumn("dim1", desc2));
-    Assert.assertEquals(ImmutableList.of("c"), readSegmentColumn("dim1", desc3));
-    Assert.assertTrue((ImmutableList.of("d", "e").equals(readSegmentColumn("dim1", desc4))
-                       && ImmutableList.of("h").equals(readSegmentColumn("dim1", desc5))) ||
-                      (ImmutableList.of("d", "h").equals(readSegmentColumn("dim1", desc4))
-                       && ImmutableList.of("e").equals(readSegmentColumn("dim1", desc5))));
-    Assert.assertEquals(ImmutableList.of("g"), readSegmentColumn("dim1", desc6));
-    Assert.assertEquals(ImmutableList.of("f"), readSegmentColumn("dim1", desc7));
   }
 
   @Test(timeout = 60_000L)
@@ -767,7 +763,11 @@ public class KafkaIndexTaskTest
     intermediateHandoffPeriod = new Period().withSeconds(0);
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records.subList(0, 2)) {
+        kafkaProducer.send(record).get();
+      }
+    }
     Map<String, Object> consumerProps = kafkaServer.consumerProperties();
     consumerProps.put("max.poll.records", "1");
 
@@ -810,7 +810,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
     final ListenableFuture<TaskStatus> future = runTask(task);
@@ -881,12 +882,9 @@ public class KafkaIndexTaskTest
 
     // Insert data
     try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
       for (ProducerRecord<byte[], byte[]> record : records) {
         kafkaProducer.send(record).get();
       }
-      kafkaProducer.commitTransaction();
     }
     Map<String, Object> consumerProps = kafkaServer.consumerProperties();
     consumerProps.put("max.poll.records", "1");
@@ -915,7 +913,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
     final ListenableFuture<TaskStatus> future = runTask(task);
@@ -951,7 +950,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             DateTimes.of("2010"),
-            null
+            null,
+            false
         )
     );
 
@@ -963,7 +963,11 @@ public class KafkaIndexTaskTest
     }
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     // Wait for task to exit
     Assert.assertEquals(TaskState.SUCCESS, future.get().getStatusCode());
@@ -1001,7 +1005,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            DateTimes.of("2010")
+            DateTimes.of("2010"),
+            false
         )
     );
 
@@ -1013,7 +1018,11 @@ public class KafkaIndexTaskTest
     }
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     // Wait for task to exit
     Assert.assertEquals(TaskState.SUCCESS, future.get().getStatusCode());
@@ -1061,7 +1070,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1073,7 +1083,11 @@ public class KafkaIndexTaskTest
     }
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     // Wait for task to exit
     Assert.assertEquals(TaskState.SUCCESS, future.get().getStatusCode());
@@ -1100,7 +1114,11 @@ public class KafkaIndexTaskTest
   public void testRunOnNothing() throws Exception
   {
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final KafkaIndexTask task = createTask(
         null,
@@ -1113,7 +1131,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1137,7 +1156,11 @@ public class KafkaIndexTaskTest
     handoffConditionTimeout = 5_000;
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final KafkaIndexTask task = createTask(
         null,
@@ -1150,7 +1173,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1185,7 +1209,11 @@ public class KafkaIndexTaskTest
     handoffConditionTimeout = 100;
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final KafkaIndexTask task = createTask(
         null,
@@ -1198,7 +1226,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1236,7 +1265,11 @@ public class KafkaIndexTaskTest
     maxSavedParseExceptions = 2;
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final KafkaIndexTask task = createTask(
         null,
@@ -1249,7 +1282,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1276,7 +1310,11 @@ public class KafkaIndexTaskTest
     maxSavedParseExceptions = 6;
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final KafkaIndexTask task = createTask(
         null,
@@ -1289,7 +1327,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1354,7 +1393,11 @@ public class KafkaIndexTaskTest
     maxSavedParseExceptions = 2;
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final KafkaIndexTask task = createTask(
         null,
@@ -1367,7 +1410,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1427,7 +1471,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
     final KafkaIndexTask task2 = createTask(
@@ -1441,7 +1486,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1449,7 +1495,11 @@ public class KafkaIndexTaskTest
     final ListenableFuture<TaskStatus> future2 = runTask(task2);
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     // Wait for tasks to exit
     Assert.assertEquals(TaskState.SUCCESS, future1.get().getStatusCode());
@@ -1491,7 +1541,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
     final KafkaIndexTask task2 = createTask(
@@ -1505,12 +1556,17 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     // Run first task
     final ListenableFuture<TaskStatus> future1 = runTask(task1);
@@ -1556,7 +1612,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             false,
             null,
-            null
+            null,
+            false
         )
     );
     final KafkaIndexTask task2 = createTask(
@@ -1570,12 +1627,17 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             false,
             null,
-            null
+            null,
+            false
         )
     );
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     // Run first task
     final ListenableFuture<TaskStatus> future1 = runTask(task1);
@@ -1626,14 +1688,20 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
     final ListenableFuture<TaskStatus> future = runTask(task);
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+      kafkaProducer.flush();
+    }
 
     // Wait for tasks to exit
     Assert.assertEquals(TaskState.SUCCESS, future.get().getStatusCode());
@@ -1686,7 +1754,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
     final KafkaIndexTask task2 = createTask(
@@ -1700,7 +1769,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1708,7 +1778,11 @@ public class KafkaIndexTaskTest
     final ListenableFuture<TaskStatus> future2 = runTask(task2);
 
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     // Wait for tasks to exit
     Assert.assertEquals(TaskState.SUCCESS, future1.get().getStatusCode());
@@ -1747,12 +1821,13 @@ public class KafkaIndexTaskTest
             0,
             "sequence0",
             new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 2L)),
-            new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 6L)),
+            new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 5L)),
             kafkaServer.consumerProperties(),
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1760,12 +1835,9 @@ public class KafkaIndexTaskTest
 
     // Insert some data, but not enough for the task to finish
     try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
       for (ProducerRecord<byte[], byte[]> record : Iterables.limit(records, 4)) {
         kafkaProducer.send(record).get();
       }
-      kafkaProducer.commitTransaction();
     }
 
     while (countEvents(task1) != 2) {
@@ -1787,12 +1859,13 @@ public class KafkaIndexTaskTest
             0,
             "sequence0",
             new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 2L)),
-            new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 6L)),
+            new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 5L)),
             kafkaServer.consumerProperties(),
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1800,16 +1873,12 @@ public class KafkaIndexTaskTest
 
     // Insert remaining data
     try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
       for (ProducerRecord<byte[], byte[]> record : Iterables.skip(records, 4)) {
         kafkaProducer.send(record).get();
       }
-      kafkaProducer.commitTransaction();
     }
 
     // Wait for task to exit
-
     Assert.assertEquals(TaskState.SUCCESS, future2.get().getStatusCode());
 
     // Check metrics
@@ -1825,7 +1894,7 @@ public class KafkaIndexTaskTest
     SegmentDescriptor desc2 = SD(task1, "2011/P1D", 0);
     Assert.assertEquals(ImmutableSet.of(desc1, desc2), publishedDescriptors());
     Assert.assertEquals(
-        new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 6L))),
+        new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 5L))),
         metadataStorageCoordinator.getDataSourceMetadata(DATA_SCHEMA.getDataSource())
     );
 
@@ -1843,12 +1912,13 @@ public class KafkaIndexTaskTest
             0,
             "sequence0",
             new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 2L)),
-            new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 6L)),
+            new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 5L)),
             kafkaServer.consumerProperties(),
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1856,13 +1926,10 @@ public class KafkaIndexTaskTest
 
     // Insert some data, but not enough for the task to finish
     try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
       for (ProducerRecord<byte[], byte[]> record : Iterables.limit(records, 4)) {
         kafkaProducer.send(record).get();
       }
       kafkaProducer.flush();
-      kafkaProducer.commitTransaction();
     }
 
     while (countEvents(task) != 2) {
@@ -1879,14 +1946,12 @@ public class KafkaIndexTaskTest
         }
     );
     Assert.assertEquals(Status.PAUSED, task.getRunner().getStatus());
+
     // Insert remaining data
     try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
       for (ProducerRecord<byte[], byte[]> record : Iterables.skip(records, 4)) {
         kafkaProducer.send(record).get();
       }
-      kafkaProducer.commitTransaction();
     }
 
     try {
@@ -1914,7 +1979,7 @@ public class KafkaIndexTaskTest
     SegmentDescriptor desc2 = SD(task, "2011/P1D", 0);
     Assert.assertEquals(ImmutableSet.of(desc1, desc2), publishedDescriptors());
     Assert.assertEquals(
-        new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 6L))),
+        new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 5L))),
         metadataStorageCoordinator.getDataSourceMetadata(DATA_SCHEMA.getDataSource())
     );
 
@@ -1937,7 +2002,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1959,7 +2025,11 @@ public class KafkaIndexTaskTest
   {
     resetOffsetAutomatically = true;
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final KafkaIndexTask task = createTask(
         null,
@@ -1972,7 +2042,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         )
     );
 
@@ -1999,7 +2070,11 @@ public class KafkaIndexTaskTest
       return;
     }
     // Insert data
-    insertData();
+    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
+      for (ProducerRecord<byte[], byte[]> record : records) {
+        kafkaProducer.send(record).get();
+      }
+    }
 
     final TreeMap<Integer, Map<Integer, Long>> sequences = new TreeMap<>();
     // Here the sequence number is 1 meaning that one incremental handoff was done by the failed task
@@ -2022,7 +2097,8 @@ public class KafkaIndexTaskTest
             KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
             true,
             null,
-            null
+            null,
+            false
         ),
         context
     );
@@ -2049,134 +2125,6 @@ public class KafkaIndexTaskTest
     // Check segments in deep storage
     Assert.assertEquals(ImmutableList.of("c"), readSegmentColumn("dim1", desc1));
     Assert.assertEquals(ImmutableList.of("d", "e"), readSegmentColumn("dim1", desc2));
-  }
-
-  @Test(timeout = 60_000L)
-  public void testRunTransactionModeRollback() throws Exception
-  {
-    final KafkaIndexTask task = createTask(
-        null,
-        new KafkaIndexTaskIOConfig(
-            0,
-            "sequence0",
-            new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 0L)),
-            new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 13L)),
-            kafkaServer.consumerProperties(),
-            KafkaSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS,
-            true,
-            null,
-            null
-        )
-    );
-
-    final ListenableFuture<TaskStatus> future = runTask(task);
-
-    // Insert 2 records initially
-    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
-      for (ProducerRecord<byte[], byte[]> record : Iterables.limit(records, 2)) {
-        kafkaProducer.send(record).get();
-      }
-      kafkaProducer.commitTransaction();
-    }
-
-    while (countEvents(task) != 2) {
-      Thread.sleep(25);
-    }
-
-    Assert.assertEquals(2, countEvents(task));
-    Assert.assertEquals(Status.READING, task.getRunner().getStatus());
-
-    //verify the 2 indexed records
-    final QuerySegmentSpec firstInterval = objectMapper.readValue(
-        "\"2008/2010\"", QuerySegmentSpec.class
-    );
-    Iterable<ScanResultValue> scanResultValues = scanData(task, firstInterval);
-    Assert.assertEquals(2, Iterables.size(scanResultValues));
-
-    // Insert 3 more records and rollback
-    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
-      for (ProducerRecord<byte[], byte[]> record : Iterables.limit(Iterables.skip(records, 2), 3)) {
-        kafkaProducer.send(record).get();
-      }
-      kafkaProducer.flush();
-      kafkaProducer.abortTransaction();
-    }
-
-    Assert.assertEquals(2, countEvents(task));
-    Assert.assertEquals(Status.READING, task.getRunner().getStatus());
-
-    final QuerySegmentSpec rollbackedInterval = objectMapper.readValue(
-        "\"2010/2012\"", QuerySegmentSpec.class
-    );
-    scanResultValues = scanData(task, rollbackedInterval);
-    //verify that there are no records indexed in the rollbacked time period
-    Assert.assertEquals(0, Iterables.size(scanResultValues));
-
-    // Insert remaining data
-    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
-      for (ProducerRecord<byte[], byte[]> record : Iterables.skip(records, 5)) {
-        kafkaProducer.send(record).get();
-      }
-      kafkaProducer.commitTransaction();
-    }
-
-    final QuerySegmentSpec endInterval = objectMapper.readValue(
-        "\"2008/2049\"", QuerySegmentSpec.class
-    );
-    Iterable<ScanResultValue> scanResultValues1 = scanData(task, endInterval);
-    Assert.assertEquals(2, Iterables.size(scanResultValues1));
-
-    Assert.assertEquals(TaskState.SUCCESS, future.get().getStatusCode());
-    Assert.assertEquals(task.getRunner().getEndOffsets(), task.getRunner().getCurrentOffsets());
-
-    // Check metrics
-    Assert.assertEquals(3, task.getRunner().getRowIngestionMeters().getProcessed());
-    Assert.assertEquals(3, task.getRunner().getRowIngestionMeters().getUnparseable());
-    Assert.assertEquals(1, task.getRunner().getRowIngestionMeters().getThrownAway());
-
-    // Check published metadata
-    SegmentDescriptor desc1 = SD(task, "2008/P1D", 0);
-    SegmentDescriptor desc2 = SD(task, "2009/P1D", 0);
-    SegmentDescriptor desc3 = SD(task, "2013/P1D", 0);
-    SegmentDescriptor desc4 = SD(task, "2049/P1D", 0);
-    Assert.assertEquals(ImmutableSet.of(desc1, desc2, desc3, desc4), publishedDescriptors());
-    Assert.assertEquals(
-        new KafkaDataSourceMetadata(new SeekableStreamPartitions<>(topic, ImmutableMap.of(0, 13L))),
-        metadataStorageCoordinator.getDataSourceMetadata(DATA_SCHEMA.getDataSource())
-    );
-
-    // Check segments in deep storage
-    Assert.assertEquals(ImmutableList.of("a"), readSegmentColumn("dim1", desc1));
-    Assert.assertEquals(ImmutableList.of("b"), readSegmentColumn("dim1", desc2));
-    Assert.assertEquals(ImmutableList.of("f"), readSegmentColumn("dim1", desc3));
-    Assert.assertEquals(ImmutableList.of("f"), readSegmentColumn("dim1", desc4));
-  }
-
-  private List<ScanResultValue> scanData(final Task task, QuerySegmentSpec spec)
-  {
-    ScanQuery query = new ScanQuery.ScanQueryBuilder().dataSource(
-        DATA_SCHEMA.getDataSource()).intervals(spec).build();
-    List<ScanResultValue> results =
-        task.getQueryRunner(query).run(wrap(query), new HashMap<>()).toList();
-    return results;
-  }
-
-  private void insertData() throws ExecutionException, InterruptedException
-  {
-    try (final KafkaProducer<byte[], byte[]> kafkaProducer = kafkaServer.newProducer()) {
-      kafkaProducer.initTransactions();
-      kafkaProducer.beginTransaction();
-      for (ProducerRecord<byte[], byte[]> record : records) {
-        kafkaProducer.send(record).get();
-      }
-      kafkaProducer.commitTransaction();
-    }
   }
 
   private ListenableFuture<TaskStatus> runTask(final Task task)
@@ -2347,7 +2295,7 @@ public class KafkaIndexTaskTest
     );
   }
 
-  private QueryRunnerFactoryConglomerate makeTimeseriesAndScanConglomerate()
+  private QueryRunnerFactoryConglomerate makeTimeseriesOnlyConglomerate()
   {
     IntervalChunkingQueryRunnerDecorator queryRunnerDecorator = new IntervalChunkingQueryRunnerDecorator(
         null,
@@ -2362,33 +2310,16 @@ public class KafkaIndexTaskTest
       }
     };
     return new DefaultQueryRunnerFactoryConglomerate(
-        ImmutableMap.<Class<? extends Query>, QueryRunnerFactory>builder()
-            .put(
-                TimeseriesQuery.class,
-                new TimeseriesQueryRunnerFactory(
-                    new TimeseriesQueryQueryToolChest(queryRunnerDecorator),
-                    new TimeseriesQueryEngine(),
-                    new QueryWatcher()
-                    {
-                      @Override
-                      public void registerQuery(Query query, ListenableFuture future)
-                      {
-                        // do nothing
-                      }
-                    }
-                )
+        ImmutableMap.of(
+            TimeseriesQuery.class,
+            new TimeseriesQueryRunnerFactory(
+                new TimeseriesQueryQueryToolChest(queryRunnerDecorator),
+                new TimeseriesQueryEngine(),
+                (query, future) -> {
+                  // do nothing
+                }
             )
-            .put(
-                ScanQuery.class,
-                new ScanQueryRunnerFactory(
-                    new ScanQueryQueryToolChest(
-                        new ScanQueryConfig(),
-                        new DefaultGenericQueryMetricsFactory(TestHelper.makeJsonMapper())
-                    ),
-                    new ScanQueryEngine()
-                )
-            )
-            .build()
+        )
     );
   }
 
@@ -2518,7 +2449,7 @@ public class KafkaIndexTaskTest
         new TestDataSegmentAnnouncer(),
         EasyMock.createNiceMock(DataSegmentServerAnnouncer.class),
         handoffNotifierFactory,
-        this::makeTimeseriesAndScanConglomerate,
+        this::makeTimeseriesOnlyConglomerate,
         Execs.directExecutor(), // queryExecutorService
         EasyMock.createMock(MonitorScheduler.class),
         new SegmentLoaderFactory(
@@ -2629,7 +2560,7 @@ public class KafkaIndexTaskTest
                                   .build();
 
     List<Result<TimeseriesResultValue>> results =
-        task.getQueryRunner(query).run(wrap(query), ImmutableMap.of()).toList();
+        task.getQueryRunner(query).run(QueryPlus.wrap(query), ImmutableMap.of()).toList();
 
     return results.isEmpty() ? 0L : DimensionHandlerUtils.nullToZero(results.get(0).getValue().getLongMetric("rows"));
   }

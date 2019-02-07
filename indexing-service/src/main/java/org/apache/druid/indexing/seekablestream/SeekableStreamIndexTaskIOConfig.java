@@ -43,6 +43,7 @@ public abstract class SeekableStreamIndexTaskIOConfig<PartitionIdType, SequenceO
   private final boolean useTransaction;
   private final Optional<DateTime> minimumMessageTime;
   private final Optional<DateTime> maximumMessageTime;
+  private final boolean skipOffsetGaps;
   private final Set<PartitionIdType> exclusiveStartSequenceNumberPartitions;
 
   @JsonCreator
@@ -54,6 +55,7 @@ public abstract class SeekableStreamIndexTaskIOConfig<PartitionIdType, SequenceO
       @JsonProperty("useTransaction") Boolean useTransaction,
       @JsonProperty("minimumMessageTime") DateTime minimumMessageTime,
       @JsonProperty("maximumMessageTime") DateTime maximumMessageTime,
+      @JsonProperty("skipOffsetGaps") Boolean skipOffsetGaps,
       @JsonProperty("exclusiveStartSequenceNumberPartitions")
           Set<PartitionIdType> exclusiveStartSequenceNumberPartitions
   )
@@ -65,6 +67,7 @@ public abstract class SeekableStreamIndexTaskIOConfig<PartitionIdType, SequenceO
     this.useTransaction = useTransaction != null ? useTransaction : DEFAULT_USE_TRANSACTION;
     this.minimumMessageTime = Optional.fromNullable(minimumMessageTime);
     this.maximumMessageTime = Optional.fromNullable(maximumMessageTime);
+    this.skipOffsetGaps = skipOffsetGaps != null ? skipOffsetGaps : DEFAULT_SKIP_OFFSET_GAPS;
     this.exclusiveStartSequenceNumberPartitions = exclusiveStartSequenceNumberPartitions == null
                                                   ? Collections.emptySet()
                                                   : exclusiveStartSequenceNumberPartitions;
@@ -134,4 +137,9 @@ public abstract class SeekableStreamIndexTaskIOConfig<PartitionIdType, SequenceO
     return minimumMessageTime;
   }
 
+  @JsonProperty
+  public boolean isSkipOffsetGaps()
+  {
+    return skipOffsetGaps;
+  }
 }

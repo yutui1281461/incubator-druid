@@ -56,7 +56,6 @@ import java.util.concurrent.TimeUnit;
  * This class is not thread safe, the caller must ensure all the methods be
  * called from single thread
  */
-@Deprecated
 public class KafkaSimpleConsumer
 {
 

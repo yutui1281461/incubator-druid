@@ -41,8 +41,11 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Queues;
+import com.google.common.hash.Hashing;
+import com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.druid.common.aws.AWSCredentialsConfig;
 import org.apache.druid.common.aws.AWSCredentialsUtils;
+import org.apache.druid.indexing.kinesis.protobuf.AggregatedRecordProtos;
 import org.apache.druid.indexing.seekablestream.common.OrderedPartitionableRecord;
 import org.apache.druid.indexing.seekablestream.common.RecordSupplier;
 import org.apache.druid.indexing.seekablestream.common.StreamPartition;
@@ -54,11 +57,9 @@ import org.apache.druid.java.util.emitter.EmittingLogger;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -186,26 +187,7 @@ public class KinesisRecordSupplier implements RecordSupplier<String, String>
 
           // list will come back empty if there are no records
           for (Record kinesisRecord : recordsResult.getRecords()) {
-
-            final List<byte[]> data;
-
-            if (deaggregate) {
-              if (deaggregateHandle == null || getDataHandle == null) {
-                throw new ISE("deaggregateHandle or getDataHandle is null!");
-              }
-
-              data = new ArrayList<>();
-
-              final List userRecords = (List) deaggregateHandle.invokeExact(
-                  Collections.singletonList(kinesisRecord)
-              );
-
-              for (Object userRecord : userRecords) {
-                data.add(toByteArray((ByteBuffer) getDataHandle.invoke(userRecord)));
-              }
-            } else {
-              data = Collections.singletonList(toByteArray(kinesisRecord.getData()));
-            }
+            final List<byte[]> data = deaggregateKinesisRecord(kinesisRecord);
 
             currRecord = new OrderedPartitionableRecord<>(
                 streamPartition.getStream(),
@@ -294,6 +276,10 @@ public class KinesisRecordSupplier implements RecordSupplier<String, String>
             throw new RuntimeException(e);
           }
         }
+        catch (InvalidProtocolBufferException e) {
+          log.warn(e, "Aggregated message's format is invalid (doesn't match KPL's protobuf schema).");
+          throw new RuntimeException(e);
+        }
         catch (Throwable e) {
           // non transient errors
           log.error(e, "unknown getRecordRunnable exception, will not retry");
@@ -324,15 +310,10 @@ public class KinesisRecordSupplier implements RecordSupplier<String, String>
     }
   }
 
-  // used for deaggregate
-  private final MethodHandle deaggregateHandle;
-  private final MethodHandle getDataHandle;
-
   private final AmazonKinesis kinesis;
 
   private final int recordsPerFetch;
   private final int fetchDelayMillis;
-  private final boolean deaggregate;
   private final int recordBufferOfferTimeout;
   private final int recordBufferFullWait;
   private final int fetchSequenceNumberTimeout;
@@ -349,12 +330,17 @@ public class KinesisRecordSupplier implements RecordSupplier<String, String>
   private volatile boolean checkPartitionsStarted = false;
   private volatile boolean closed = false;
 
+  @VisibleForTesting
+  final byte[] KPL_AGGREGATE_MAGIC_NUMBERS = {(byte) 0xF3, (byte) 0x89, (byte) 0x9A, (byte) 0xC2};
+  @VisibleForTesting
+  final int KPL_AGGREGATE_CHECKSUM_LENGTH_IN_BYTES = 16;
+
+
   public KinesisRecordSupplier(
       AmazonKinesis amazonKinesis,
       int recordsPerFetch,
       int fetchDelayMillis,
       int fetchThreads,
-      boolean deaggregate,
       int recordBufferSize,
       int recordBufferOfferTimeout,
       int recordBufferFullWait,
@@ -366,39 +352,12 @@ public class KinesisRecordSupplier implements RecordSupplier<String, String>
     this.kinesis = amazonKinesis;
     this.recordsPerFetch = recordsPerFetch;
     this.fetchDelayMillis = fetchDelayMillis;
-    this.deaggregate = deaggregate;
     this.recordBufferOfferTimeout = recordBufferOfferTimeout;
     this.recordBufferFullWait = recordBufferFullWait;
     this.fetchSequenceNumberTimeout = fetchSequenceNumberTimeout;
     this.maxRecordsPerPoll = maxRecordsPerPoll;
     this.fetchThreads = fetchThreads;
     this.recordBufferSize = recordBufferSize;
-
-    // the deaggregate function is implemented by the amazon-kinesis-client, whose license is not compatible with Apache.
-    // The work around here is to use reflection to find the deaggregate function in the classpath. See details on the
-    // docs page for more information on how to use deaggregation
-    if (deaggregate) {
-      try {
-        Class<?> kclUserRecordclass = Class.forName("com.amazonaws.services.kinesis.clientlibrary.types.UserRecord");
-        MethodHandles.Lookup lookup = MethodHandles.publicLookup();
-
-        Method deaggregateMethod = kclUserRecordclass.getMethod("deaggregate", List.class);
-        Method getDataMethod = kclUserRecordclass.getMethod("getData");
-
-        deaggregateHandle = lookup.unreflect(deaggregateMethod);
-        getDataHandle = lookup.unreflect(getDataMethod);
-      }
-      catch (ClassNotFoundException e) {
-        throw new ISE(e, "cannot find class[com.amazonaws.services.kinesis.clientlibrary.types.UserRecord], "
-                         + "note that when using deaggregate=true, you must provide the Kinesis Client Library jar in the classpath");
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    } else {
-      deaggregateHandle = null;
-      getDataHandle = null;
-    }
 
     log.info(
         "Creating fetch thread pool of size [%d] (Runtime.availableProcessors=%d)",
@@ -747,6 +706,41 @@ public class KinesisRecordSupplier implements RecordSupplier<String, String>
     );
     return null;
 
+  }
+
+  @VisibleForTesting
+  List<byte[]> deaggregateKinesisRecord(Record kinesisRecord) throws InvalidProtocolBufferException
+  {
+    ByteBuffer kinesisRecordData = kinesisRecord.getData();
+    int recordSize = kinesisRecordData.position(0).remaining();
+    boolean validAggregateLength = (recordSize > KPL_AGGREGATE_MAGIC_NUMBERS.length + KPL_AGGREGATE_CHECKSUM_LENGTH_IN_BYTES);
+    if (!validAggregateLength) {
+      ByteBuffer kinesisData = (ByteBuffer) kinesisRecord.getData().position(0);
+      return Collections.singletonList(toByteArray(kinesisData));
+    } else {
+      byte[] magicNumbers = new byte[KPL_AGGREGATE_MAGIC_NUMBERS.length];
+      byte[] protobufMessage = new byte[recordSize - KPL_AGGREGATE_CHECKSUM_LENGTH_IN_BYTES - KPL_AGGREGATE_MAGIC_NUMBERS.length];
+      byte[] checksum = new byte[KPL_AGGREGATE_CHECKSUM_LENGTH_IN_BYTES];
+
+      kinesisRecordData.get(magicNumbers, 0, magicNumbers.length);
+      kinesisRecordData.get(protobufMessage, 0, protobufMessage.length);
+      kinesisRecordData.get(checksum, 0, checksum.length);
+      byte[] messageHash = Hashing.md5().hashBytes(protobufMessage).asBytes();
+
+      //Check magic numbers and checksum value to see if the message is an aggregate
+      if (Arrays.equals(magicNumbers, KPL_AGGREGATE_MAGIC_NUMBERS)
+          && Arrays.equals(messageHash, checksum)) {
+        List<byte[]> data = new ArrayList<>();
+        AggregatedRecordProtos.AggregatedRecord aggregatedRecord = AggregatedRecordProtos.AggregatedRecord.parseFrom(protobufMessage);
+        for (AggregatedRecordProtos.Record userRecord : aggregatedRecord.getRecordsList()) {
+          data.add(userRecord.getData().toByteArray());
+        }
+        return data;
+      } else {
+        ByteBuffer kinesisData = (ByteBuffer) kinesisRecord.getData().position(0);
+        return Collections.singletonList(toByteArray(kinesisData));
+      }
+    }
   }
 
   private void checkIfClosed()

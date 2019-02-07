@@ -130,7 +130,7 @@ import java.util.stream.Collectors;
  * @param <PartitionIdType>    Partition Number Type
  * @param <SequenceOffsetType> Sequence Number Type
  */
-public abstract class SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOffsetType extends Comparable> implements ChatHandler
+public abstract class SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOffsetType> implements ChatHandler
 {
   public enum Status
   {
@@ -474,7 +474,7 @@ public abstract class SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOff
           }
 
           // if stop is requested or task's end sequence is set by call to setEndOffsets method with finish set to true
-          if (stopRequested.get() || sequences.size() == 0 || sequences.get(sequences.size() - 1).isCheckpointed()) {
+          if (stopRequested.get() || sequences.get(sequences.size() - 1).isCheckpointed()) {
             status = Status.PUBLISHING;
           }
 
@@ -504,11 +504,10 @@ public abstract class SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOff
           SequenceMetadata sequenceToCheckpoint = null;
           for (OrderedPartitionableRecord<PartitionIdType, SequenceOffsetType> record : records) {
 
-
             // for Kafka, the end offsets are exclusive, so skip it
             if (isEndSequenceOffsetsExclusive() &&
                 createSequenceNumber(record.getSequenceNumber()).compareTo(
-                    createSequenceNumber(endOffsets.get(record.getPartitionId()))) >= 0) {
+                    createSequenceNumber(endOffsets.get(record.getPartitionId()))) == 0) {
               continue;
             }
 
@@ -530,6 +529,17 @@ public abstract class SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOff
               currOffsets.put(record.getPartitionId(), record.getSequenceNumber());
             } else if (createSequenceNumber(record.getSequenceNumber()).compareTo(
                 createSequenceNumber(endOffsets.get(record.getPartitionId()))) <= 0) {
+
+
+              if (!record.getSequenceNumber().equals(currOffsets.get(record.getPartitionId()))
+                  && !ioConfig.isSkipOffsetGaps()) {
+                throw new ISE(
+                    "WTF?! Got sequence[%s] after sequence[%s] in partition[%s].",
+                    record.getSequenceNumber(),
+                    currOffsets.get(record.getPartitionId()),
+                    record.getPartitionId()
+                );
+              }
 
               try {
                 final List<byte[]> valueBytess = record.getData();
@@ -624,6 +634,7 @@ public abstract class SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOff
               // here for kafka is to +1 while for kinesis we simply save the current sequence number
               currOffsets.put(record.getPartitionId(), getSequenceNumberToStoreAfterRead(record.getSequenceNumber()));
             }
+
             if ((currOffsets.get(record.getPartitionId()).equals(endOffsets.get(record.getPartitionId()))
                  || isEndOfShard(currOffsets.get(record.getPartitionId())))
                 && assignment.remove(record.getStreamPartition())) {
@@ -1885,7 +1896,7 @@ public abstract class SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOff
   )
   {
     if (intialSequenceSnapshot.containsKey(record.getPartitionId())) {
-      if (record.getSequenceNumber().compareTo(intialSequenceSnapshot.get(record.getPartitionId())) < 0) {
+      if (!intialSequenceSnapshot.get(record.getPartitionId()).equals(record.getSequenceNumber())) {
         throw new ISE(
             "Starting sequenceNumber [%s] does not match expected [%s] for partition [%s]",
             record.getSequenceNumber(),
